@@ -2,14 +2,14 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.0
+ * Version: 1.6.1
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
  *
  * ── INSTALL / UPDATE ─────────────────────────────────────────────────────────
- *   Updates arrive through Git Updater from the private repo seanmarshall21/oak-elm-embed
- *   (needs a read-only GitHub token in Settings → Git Updater). The source of truth is
+ *   Updates arrive through Git Updater (free) from the PUBLIC repo seanmarshall21/oak-elm-embed
+ *   (no token needed; the repo holds only this plugin, no secrets). The source of truth is
  *   oak-elm/wp-plugin/oak-elm-embed/; scripts/publish-plugin.sh copies it to that repo.
  *   Manual fallback: Plugins → Add New → Upload Plugin → dist/oak-elm-embed.zip.
  *   Everything section-specific lives in the oak-elm repo's site/ folder, which
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.0' );
+define( 'OE_EMBED_VERSION', '1.6.1' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
