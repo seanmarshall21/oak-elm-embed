@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.2
+ * Version: 1.6.3
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.2' );
+define( 'OE_EMBED_VERSION', '1.6.3' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -358,6 +358,7 @@ add_action( 'acf/init', function () {
                 'label' => 'Show this section', 'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'Shown', 'ui_off_text' => 'Hidden', 'default_value' => 1,
                 'instructions' => 'Untick to take this section off the live page. Nothing is deleted — the wording below stays exactly as it is and comes straight back when you tick it again. Takes up to two minutes to show on the site.',
             );
+            $opened = false; $has_acc = false;
             foreach ( $sec['slots'] as $key => $def ) {
                 $type    = isset( $def['type'] ) ? $def['type'] : 'text';
                 $default = isset( $def['default'] ) ? (string) $def['default'] : '';
@@ -399,11 +400,14 @@ add_action( 'acf/init', function () {
                                                  . 'Leave blank to use the text shown in gray.' );
                 }
                 if ( isset( $def['width'] ) ) $f['wrapper'] = array( 'width' => (string) $def['width'] );
-                if ( ! empty( $def['heading'] ) ) {
-                    $fields[] = array( 'key' => $f['key'] . '__h', 'label' => $def['heading'], 'name' => '', 'type' => 'message', 'message' => '' );
+                if ( ! empty( $def['heading'] ) ) {  // a heading starts a collapsible group (first one per tab opens)
+                    $fields[] = array( 'key' => $f['key'] . '__h', 'label' => $def['heading'], 'name' => '', 'type' => 'accordion',
+                                       'open' => $opened ? 0 : 1, 'multi_expand' => 1, 'endpoint' => 0 );
+                    $opened = true; $has_acc = true;
                 }
                 $fields[] = $f;
             }
+            if ( $has_acc ) $fields[] = array( 'key' => 'field_oe_acc_end_' . $sec['id'], 'label' => '', 'name' => '', 'type' => 'accordion', 'endpoint' => 1 );
         }
         acf_add_local_field_group( array(
             'key' => 'group_oe_' . str_replace( '-', '_', sanitize_title( $group ) ),
@@ -485,13 +489,14 @@ add_action( 'acf/init', function () {
                       'instructions' => 'Design value: ' . $c[1], 'wrapper' => array( 'width' => '33' ) );
     }
     $F[] = array( 'key' => 'field_oe_ds_tab_buttons', 'label' => 'Buttons', 'name' => '', 'type' => 'tab', 'placement' => 'top' );
+    $F[] = array( 'key' => 'field_oe_ds_btn_all_acc', 'label' => 'All buttons', 'name' => '', 'type' => 'accordion', 'open' => 1, 'multi_expand' => 1 );
     $F[] = array( 'key' => 'field_oe_ds_btn_hover', 'name' => 'oe_ds_btn_hover', 'label' => 'Hover effect (all buttons)', 'type' => 'select',
                   'choices' => array( 'brighten' => 'Brighten (default)', 'swap' => 'Swap to the hover colors', 'fill' => 'Fill with the hover color from the left', 'lift' => 'Lift with a soft shadow', 'none' => 'No hover effect' ),
                   'default_value' => 'brighten', 'wrapper' => array( 'width' => '50' ) );
     $F[] = array( 'key' => 'field_oe_ds_btn_radius', 'name' => 'oe_ds_btn_radius', 'label' => 'Corner rounding (px)', 'type' => 'number',
                   'min' => 0, 'max' => 40, 'placeholder' => '0', 'instructions' => 'Design: square (0).', 'wrapper' => array( 'width' => '50' ) );
     foreach ( oe_ds_buttons() as $k => $b ) {
-        $F[] = array( 'key' => 'field_oe_ds_btn_' . $k . '_msg', 'label' => $b[0], 'name' => '', 'type' => 'message', 'message' => '' );
+        $F[] = array( 'key' => 'field_oe_ds_btn_' . $k . '_msg', 'label' => $b[0], 'name' => '', 'type' => 'accordion', 'open' => 0, 'multi_expand' => 1 );
         $parts = array( 'bg' => array( 'Background', $b[1] ), 'text' => array( 'Text', $b[2] ), 'hover_bg' => array( 'Hover background', $b[3] ), 'hover_text' => array( 'Hover text', $b[4] ) );
         foreach ( $parts as $p => $d ) {
             $F[] = array( 'key' => 'field_oe_ds_btn_' . $k . '_' . $p, 'name' => 'oe_ds_btn_' . $k . '_' . $p, 'label' => $b[0] . ' — ' . $d[0],
@@ -499,9 +504,10 @@ add_action( 'acf/init', function () {
                           'wrapper' => array( 'width' => '25' ) );
         }
     }
+    $F[] = array( 'key' => 'field_oe_ds_btn_acc_end', 'label' => '', 'name' => '', 'type' => 'accordion', 'endpoint' => 1 );
     $F[] = array( 'key' => 'field_oe_ds_tab_nav', 'label' => 'Header menu', 'name' => '', 'type' => 'tab', 'placement' => 'top' );
     // Group 1 — Menu links: link color, underline color, animated underline (one row)
-    $F[] = array( 'key' => 'field_oe_ds_nav_links_msg', 'label' => 'Menu links', 'name' => '', 'type' => 'message', 'message' => '' );
+    $F[] = array( 'key' => 'field_oe_ds_nav_links_msg', 'label' => 'Menu links', 'name' => '', 'type' => 'accordion', 'open' => 1, 'multi_expand' => 1 );
     $F[] = array( 'key' => 'field_oe_ds_nav_link', 'name' => 'oe_ds_nav_link', 'label' => 'Link color', 'type' => 'color_picker',
                   'instructions' => 'Default: #2D2926', 'wrapper' => array( 'width' => '33' ) );
     $F[] = array( 'key' => 'field_oe_ds_nav_underline', 'name' => 'oe_ds_nav_underline', 'label' => 'Underline color (hover + current page)', 'type' => 'color_picker',
@@ -509,7 +515,7 @@ add_action( 'acf/init', function () {
     $F[] = array( 'key' => 'field_oe_ds_nav_hover_line', 'name' => 'oe_ds_nav_hover_line', 'label' => 'Animated underline on hover', 'type' => 'true_false',
                   'ui' => 1, 'ui_on_text' => 'On', 'ui_off_text' => 'Off', 'default_value' => 1, 'wrapper' => array( 'width' => '34' ) );
     // Group 2 — Contact button: the four colors, laid out like the Buttons tab
-    $F[] = array( 'key' => 'field_oe_ds_nav_cta_msg', 'label' => 'Contact button', 'name' => '', 'type' => 'message', 'message' => '' );
+    $F[] = array( 'key' => 'field_oe_ds_nav_cta_msg', 'label' => 'Contact button', 'name' => '', 'type' => 'accordion', 'open' => 0, 'multi_expand' => 1 );
     $cta = array( 'nav_cta_bg' => array( 'Background', '#602232' ), 'nav_cta_text' => array( 'Text', '#EDECE3' ),
                   'nav_cta_hover_bg' => array( 'Hover background', 'same as Background' ), 'nav_cta_hover_text' => array( 'Hover text', 'same as Text' ) );
     foreach ( $cta as $k => $d ) {
