@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.4
+ * Version: 1.7.5
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.4' );
+define( 'OE_EMBED_VERSION', '1.7.5' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -403,7 +403,10 @@ add_action( 'rest_api_init', function () {
             // Toggle: never saved = on; a saved Off (false / 0 / "0") must win.
             $notify = function_exists( 'get_field' ) ? get_field( 'oe_newsletter_notify', 'option' ) : null;
             if ( $notify === null || $notify === '' || ! empty( $notify ) ) {
-                $to = oe_signup_setting( 'notify_email', get_option( 'admin_email' ) );
+                $to = trim( (string) oe_signup_setting( 'notify_email', '' ) );
+                if ( preg_match( '/^(#brand-email|\[brand\s+email\])$/i', $to ) || $to === '' ) $to = oe_brand( 'email' );   // Brand info email
+                else if ( strpos( $to, '[brand' ) !== false ) $to = trim( wp_strip_all_tags( oe_brand_resolve( $to ) ) );
+                if ( ! is_email( $to ) ) $to = get_option( 'admin_email' );
                 if ( is_email( $to ) ) wp_mail( $to, 'New newsletter sign-up: ' . $email,
                     "Email: $email\nAgreed to the Privacy Policy: yes\nPage: $page\n\nAll sign-ups: " . admin_url( 'edit.php?post_type=oe_signup' ) );
             }
@@ -760,8 +763,16 @@ function oe_brand_opt( $name ) {
     $v = function_exists( 'get_field' ) ? get_field( 'oe_brand_' . $name, 'option' ) : '';
     return is_string( $v ) ? trim( $v ) : '';
 }
+function oe_brand_socials() { return array( 'instagram', 'facebook', 'pinterest', 'tiktok', 'youtube' ); }
+/* A social link is active when its switch is on (never saved = on) AND it has a link. */
+function oe_brand_social_active( $key ) {
+    $on = function_exists( 'get_field' ) ? get_field( 'oe_brand_' . $key . '_on', 'option' ) : null;
+    if ( $on !== null && $on !== '' && empty( $on ) ) return false;
+    return oe_brand( $key ) !== '';
+}
 function oe_brand_link( $key, $label = '' ) {
     $all = oe_brand_fields();
+    if ( in_array( $key, oe_brand_socials(), true ) && ! oe_brand_social_active( $key ) ) return '';   // hidden everywhere
     if ( in_array( $key, oe_brand_mail_keys(), true ) && oe_brand_opt( $key . '_type' ) === 'email' ) {
         $to = ( oe_brand_opt( $key . '_email_source' ) === 'custom' ) ? oe_brand_opt( $key . '_email' ) : oe_brand( 'email' );
         if ( ! is_email( $to ) ) return '#';
@@ -781,11 +792,35 @@ function oe_brand_link( $key, $label = '' ) {
 function oe_brand_resolve( $html ) {
     if ( ! is_string( $html ) || ( strpos( $html, '#brand-' ) === false && strpos( $html, '[brand' ) === false ) ) return $html;
     $html = preg_replace_callback( '#<a\b([^>]*?)href=(["\'])\#brand-([a-z_]+)\2([^>]*)>([\s\S]*?)</a>#i', function ( $m ) {
-        return '<a' . $m[1] . 'href=' . $m[2] . esc_url( oe_brand_link( $m[3], $m[5] ) ) . $m[2] . $m[4] . '>' . $m[5] . '</a>';
+        $url = oe_brand_link( $m[3], $m[5] );
+        if ( $url === '' ) return '';                                   // inactive social: drop the link
+        return '<a' . $m[1] . 'href=' . $m[2] . esc_url( $url ) . $m[2] . $m[4] . '>' . $m[5] . '</a>';
     }, $html );
+    $html = preg_replace( '#<li\b[^>]*>\s*</li>#i', '', $html );       // …and the list item it sat in
     $html = preg_replace_callback( '/#brand-([a-z_]+)/', function ( $m ) { return esc_url( oe_brand_link( $m[1] ) ); }, $html );
-    return preg_replace_callback( '/\[brand\s+(?:field=["\']?)?([a-z_]+)["\']?\s*\]/', function ( $m ) { return esc_html( oe_brand( $m[1] ) ); }, $html );
+    return preg_replace_callback( '/\[brand\s+(?:field=["\']?)?([a-z_]+)["\']?\s*\]/', function ( $m ) {
+        if ( in_array( $m[1], oe_brand_socials(), true ) && ! oe_brand_social_active( $m[1] ) ) return '';
+        return esc_html( oe_brand( $m[1] ) );
+    }, $html );
 }
+/* WordPress menus anywhere: drop items that point at an inactive social (#brand-facebook …). */
+function oe_brand_social_of( $url, $title ) {
+    $url = strtolower( (string) $url ); $title = strtolower( trim( wp_strip_all_tags( (string) $title ) ) );
+    if ( preg_match( '/#brand-([a-z_]+)/', $url, $m ) && in_array( $m[1], oe_brand_socials(), true ) ) return $m[1];
+    $hosts = array( 'instagram' => 'instagram.com', 'facebook' => 'facebook.com', 'pinterest' => 'pinterest.', 'tiktok' => 'tiktok.com', 'youtube' => 'youtube.com' );
+    foreach ( $hosts as $k => $h ) if ( strpos( $url, $h ) !== false || ( $k === 'youtube' && strpos( $url, 'youtu.be' ) !== false ) || ( $k === 'facebook' && strpos( $url, 'fb.com' ) !== false ) ) return $k;
+    if ( in_array( $title, oe_brand_socials(), true ) ) return $title;   // a menu item simply labeled "Facebook"
+    return '';
+}
+/* WordPress menus anywhere: drop items for an inactive social — by #brand- link, by the platform's
+   address, or by a label that is just the platform's name. */
+add_filter( 'wp_nav_menu_objects', function ( $items ) {
+    foreach ( $items as $i => $it ) {
+        $k = oe_brand_social_of( isset( $it->url ) ? $it->url : '', isset( $it->title ) ? $it->title : '' );
+        if ( $k !== '' && ! oe_brand_social_active( $k ) ) unset( $items[ $i ] );
+    }
+    return $items;
+} );
 add_shortcode( 'brand', function ( $atts ) {
     $key = is_array( $atts ) ? ( isset( $atts['field'] ) ? $atts['field'] : ( isset( $atts[0] ) ? $atts[0] : '' ) ) : '';
     return esc_html( oe_brand( sanitize_key( $key ) ) );
@@ -811,32 +846,52 @@ add_action( 'acf/init', function () {
         'message' => '<strong>Brand info</strong> — fill these in once and use them anywhere. '
                    . 'In a link or a menu <em>Custom Link</em> URL type <code>#brand-</code> plus the key (e.g. <code>#brand-instagram</code>, <code>#brand-email</code> → mailto, <code>#brand-phone</code> → tap to call). '
                    . 'In text, ACF fields or Oxygen use <code>[brand email]</code>, <code>[brand phone]</code>, <code>[brand address]</code>, <code>[brand name]</code>… The key is shown under each field.' ) );
-    foreach ( oe_brand_fields() as $key => $d ) {
-        $mail = in_array( $key, oe_brand_mail_keys(), true );
-        if ( $mail ) {
-            $tk = 'field_oe_brand_' . $key . '_type';
-            $F[] = array( 'key' => $tk, 'name' => 'oe_brand_' . $key . '_type', 'label' => preg_replace( '/ link$/', '', $d[0] ) . ' — link goes to', 'type' => 'select',
-                'choices' => array( 'page' => 'A page or link', 'email' => 'An email' ), 'default_value' => 'page', 'allow_null' => 0, 'ui' => 0,
-                'instructions' => 'Use it anywhere with <code>#brand-' . $key . '</code>.', 'wrapper' => array( 'width' => '50' ) );
-            $isEmail = array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ) ) );
-            $sk = 'field_oe_brand_' . $key . '_email_source';
-            $F[] = array( 'key' => $sk, 'name' => 'oe_brand_' . $key . '_email_source', 'label' => 'Which email', 'type' => 'select',
-                'choices' => array( 'brand' => 'Use the brand email above', 'custom' => 'Use a different email' ), 'default_value' => 'brand', 'allow_null' => 0, 'ui' => 0,
-                'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '50' ) );
-            $F[] = array( 'key' => 'field_oe_brand_' . $key . '_email', 'name' => 'oe_brand_' . $key . '_email', 'label' => 'Email address', 'type' => 'email',
-                'conditional_logic' => array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ), array( 'field' => $sk, 'operator' => '==', 'value' => 'custom' ) ) ),
-                'wrapper' => array( 'width' => '50' ) );
-            $F[] = array( 'key' => 'field_oe_brand_' . $key . '_subject', 'name' => 'oe_brand_' . $key . '_subject', 'label' => 'Email subject', 'type' => 'text',
-                'placeholder' => 'Blank = the link\'s own label (e.g. the button text)',
-                'instructions' => 'Leave blank to use the label of whatever link points here — a “' . esc_html( preg_replace( '/ link$/', '', $d[0] ) ) . '” button sends that as the subject.',
-                'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '50' ) );
-        }
-        $F[] = array( 'key' => 'field_oe_brand_' . $key, 'name' => 'oe_brand_' . $key, 'label' => $d[0] . ( $mail ? ' (page or URL)' : '' ),
-            'conditional_logic' => $mail ? array( array( array( 'field' => 'field_oe_brand_' . $key . '_type', 'operator' => '!=', 'value' => 'email' ) ) ) : 0,
-            'type' => ( $d[2] === 'email' ? 'email' : ( $key === 'address' ? 'textarea' : 'text' ) ), 'rows' => 2, 'placeholder' => $d[1],
-            'instructions' => 'Link: <code>#brand-' . $key . '</code> · Text: <code>[brand ' . $key . ']</code>' . ( $d[1] !== '' ? ' · Blank = ' . esc_html( $d[1] ) : '' ),
-            'wrapper' => array( 'width' => '50' ) );
+    $all = oe_brand_fields();
+    $codes = function ( $key, $d ) { return 'Link: <code>#brand-' . $key . '</code> · Text: <code>[brand ' . $key . ']</code>' . ( $d[1] !== '' ? ' · Blank = ' . esc_html( $d[1] ) : '' ); };
+    $field = function ( $key, $width, $extra = array() ) use ( $all, $codes ) {
+        $d = $all[ $key ];
+        return array_merge( array( 'key' => 'field_oe_brand_' . $key, 'name' => 'oe_brand_' . $key, 'label' => $d[0],
+            'type' => ( $d[2] === 'email' ? 'email' : 'text' ), 'placeholder' => $d[1], 'instructions' => $codes( $key, $d ),
+            'wrapper' => array( 'width' => (string) $width ) ), $extra );
+    };
+    $group = function ( $id, $label, $open ) { return array( 'key' => 'field_oe_brand_grp_' . $id, 'label' => $label, 'name' => '', 'type' => 'accordion', 'open' => $open ? 1 : 0, 'multi_expand' => 1, 'endpoint' => 0 ); };
+    // Business
+    $F[] = $group( 'business', 'Business', true );
+    $F[] = $field( 'name', 50 ); $F[] = $field( 'legal_name', 50 );
+    $F[] = $field( 'email', '33.33' ); $F[] = $field( 'phone', '33.33' ); $F[] = $field( 'address', '33.33' );
+    // Social links — each with an "active" switch; off or blank = hidden everywhere
+    $F[] = $group( 'social', 'Social links (switch one off — or leave its link blank — and it disappears everywhere)', true );
+    foreach ( oe_brand_socials() as $key ) {
+        $F[] = array( 'key' => 'field_oe_brand_' . $key . '_on', 'name' => 'oe_brand_' . $key . '_on', 'label' => preg_replace( '/ link$/', '', $all[ $key ][0] ) . ' — active',
+            'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'On', 'ui_off_text' => 'Off', 'default_value' => 1, 'wrapper' => array( 'width' => '25' ) );
+        $F[] = $field( $key, 75 );
     }
+    // Book your event / Schedule a tour / Contact — page or email
+    $titles = array( 'booking' => 'Book your event', 'tour' => 'Schedule a tour', 'contact' => 'Contact' );
+    foreach ( oe_brand_mail_keys() as $key ) {
+        $F[] = $group( $key, $titles[ $key ], false );
+        $tk = 'field_oe_brand_' . $key . '_type';
+        $isEmail = array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ) ) );
+        $sk = 'field_oe_brand_' . $key . '_email_source';
+        $F[] = array( 'key' => $tk, 'name' => 'oe_brand_' . $key . '_type', 'label' => 'Link goes to', 'type' => 'select',
+            'choices' => array( 'page' => 'A page or link', 'email' => 'An email' ), 'default_value' => 'page', 'allow_null' => 0, 'ui' => 0,
+            'instructions' => 'Use it anywhere with <code>#brand-' . $key . '</code>.', 'wrapper' => array( 'width' => '33.33' ) );
+        $F[] = $field( $key, '66.67', array( 'label' => 'Page or URL', 'conditional_logic' => array( array( array( 'field' => $tk, 'operator' => '!=', 'value' => 'email' ) ) ) ) );
+        $F[] = array( 'key' => $sk, 'name' => 'oe_brand_' . $key . '_email_source', 'label' => 'Which email', 'type' => 'select',
+            'choices' => array( 'brand' => 'Use the brand email (Business)', 'custom' => 'Use a different email' ), 'default_value' => 'brand', 'allow_null' => 0, 'ui' => 0,
+            'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '33.33' ) );
+        $F[] = array( 'key' => 'field_oe_brand_' . $key . '_email', 'name' => 'oe_brand_' . $key . '_email', 'label' => 'Email address', 'type' => 'email',
+            'conditional_logic' => array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ), array( 'field' => $sk, 'operator' => '==', 'value' => 'custom' ) ) ),
+            'wrapper' => array( 'width' => '33.33' ) );
+        $F[] = array( 'key' => 'field_oe_brand_' . $key . '_subject', 'name' => 'oe_brand_' . $key . '_subject', 'label' => 'Email subject', 'type' => 'text',
+            'placeholder' => 'Blank = the label of the link that points here',
+            'instructions' => 'Leave blank to use the label of whatever link points here (button or menu text).',
+            'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '33.33' ) );
+    }
+    // Policy pages
+    $F[] = $group( 'policies', 'Policy pages', false );
+    $F[] = $field( 'privacy', 50 ); $F[] = $field( 'cookies', 50 );
+    $F[] = array( 'key' => 'field_oe_brand_grp_end', 'label' => '', 'name' => '', 'type' => 'accordion', 'endpoint' => 1 );
     acf_add_local_field_group( array( 'key' => 'group_oe_brand_info', 'title' => 'Brand info', 'fields' => $F, 'style' => 'default',
         'location' => array( array( array( 'param' => 'options_page', 'operator' => '==', 'value' => 'oe-brand-info' ) ) ) ) );
 }, 20 );
