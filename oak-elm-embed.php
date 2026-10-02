@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.6
+ * Version: 1.7.7
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.6' );
+define( 'OE_EMBED_VERSION', '1.7.7' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -783,7 +783,10 @@ function oe_brand_link( $key, $label = '' ) {
     }
     $v = oe_brand( $key );
     if ( $v === '' || ! isset( $all[ $key ] ) ) return '#';
-    if ( $all[ $key ][2] === 'email' ) return 'mailto:' . $v;
+    if ( $all[ $key ][2] === 'email' ) {                       // subject = the button's own words (Sean, 2026-10-02)
+        $subject = trim( wp_strip_all_tags( (string) $label ) );
+        return 'mailto:' . $v . ( ( $subject !== '' && strpos( $subject, '@' ) === false ) ? '?subject=' . rawurlencode( $subject ) : '' );
+    }
     if ( $all[ $key ][2] === 'phone' ) return 'tel:' . preg_replace( '/[^0-9+]/', '', $v );
     if ( $all[ $key ][2] === 'url' ) return $v;
     return '#';
@@ -969,3 +972,28 @@ add_action( 'admin_footer', function () {
 </script>
     <?php
 } );
+
+/* Front end, every page (Sean, 2026-10-02):
+   - links to another website open in a new tab;
+   - an email link with no subject gets its own words as the subject ("Book your event"). */
+add_action( 'wp_footer', function () {
+    ?>
+<script id="oe-link-rules">
+(function () {
+  var here = location.hostname.replace(/^www\./, '');
+  document.querySelectorAll('a[href]').forEach(function (a) {
+    var href = a.getAttribute('href') || '';
+    if (/^https?:\/\//i.test(href)) {
+      if (a.hostname.replace(/^www\./, '') !== here && !a.hasAttribute('target')) {
+        a.target = '_blank';
+        a.rel = ((a.rel || '') + ' noopener').trim();
+      }
+    } else if (/^mailto:/i.test(href) && !/[?&]subject=/i.test(href)) {
+      var words = (a.getAttribute('aria-label') || a.textContent || '').replace(/\s+/g, ' ').trim();
+      if (words && words.indexOf('@') < 0) a.setAttribute('href', href + (href.indexOf('?') < 0 ? '?' : '&') + 'subject=' + encodeURIComponent(words));
+    }
+  });
+})();
+</script>
+    <?php
+}, 99 );
