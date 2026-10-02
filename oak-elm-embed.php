@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.8
+ * Version: 1.6.9
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.8' );
+define( 'OE_EMBED_VERSION', '1.6.9' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -205,7 +205,22 @@ function oe_slot_value( $type, $val, $def = array() ) {
         return esc_url( $val );
     }
     if ( $type === 'url' )  return esc_url( (string) $val );
-    if ( $type === 'html' ) return do_shortcode( wp_kses_post( (string) $val ) );   // e.g. [wpconsent_cookie_policy] in the Cookie Policy
+    if ( $type === 'html' ) return do_shortcode( wp_kses_post( (string) $val ) );   // e.g. [wpconsent_cookie_policy]
+    if ( $type === 'menu' ) {        // a WordPress menu picked in Section Content (its ID); '' = use the location
+        $id = is_array( $val ) ? 0 : absint( $val );
+        return $id ? (string) $id : '';
+    }
+    if ( $type === 'sections' ) {    // a list of { title, body } rows → <h2>title</h2> + body (oe.js numbers them)
+        $out = '';
+        foreach ( (array) $val as $row ) {
+            if ( ! is_array( $row ) ) continue;
+            $t = isset( $row['title'] ) ? trim( (string) $row['title'] ) : '';
+            $b = isset( $row['body'] ) ? (string) $row['body'] : '';
+            if ( $t === '' && trim( $b ) === '' ) continue;
+            $out .= '<h2>' . esc_html( $t ) . '</h2>' . do_shortcode( wp_kses_post( $b ) );
+        }
+        return $out;
+    }   // e.g. [wpconsent_cookie_policy] in the Cookie Policy
     if ( $type === 'lines' ) {
         $out = array();
         foreach ( preg_split( '/\r\n|\r|\n/', (string) $val ) as $line ) {
@@ -255,7 +270,14 @@ function oe_fill_slots( $frag, $id, $atts, $ttl ) {
     }, $frag );
     foreach ( $out as $key => $html ) $frag = str_replace( '{{' . $key . '}}', $html, $frag );
     // WordPress menus: swap <!--oe:menu loc-->defaults<!--/oe:menu--> for the assigned menu.
-    $frag = preg_replace_callback( '#<!--oe:menu\s+([a-z0-9_]+)-->([\s\S]*?)<!--/oe:menu-->#', function ( $m ) {
+    // <!--oe:menu loc slot--> : a menu picked in Section Content (slot) wins over the location.
+    $frag = preg_replace_callback( '#<!--oe:menu\s+([a-z0-9_]+)(?:\s+([a-z0-9_]+))?-->([\s\S]*?)<!--/oe:menu-->#', function ( $m ) use ( $out ) {
+        $picked = ( ! empty( $m[2] ) && ! empty( $out[ $m[2] ] ) ) ? absint( $out[ $m[2] ] ) : 0;
+        if ( $picked && function_exists( 'wp_nav_menu' ) ) {
+            $items = wp_nav_menu( array( 'menu' => $picked, 'container' => false, 'items_wrap' => '%3$s', 'depth' => 1, 'echo' => false, 'fallback_cb' => false ) );
+            if ( is_string( $items ) && $items !== '' ) return $items;
+        }
+        $m[2] = $m[3];                       // defaults, as before
         if ( ! function_exists( 'has_nav_menu' ) || ! has_nav_menu( $m[1] ) ) return $m[2];
         // The main menu keeps one level of sub-pages (dropdowns: "More" panel / bar dropdowns /
         // phone accordions, handled by oe.js). Every other menu stays flat.
@@ -469,6 +491,18 @@ add_action( 'acf/init', function () {
                 } else if ( $type === 'select' ) {
                     $f += array( 'type' => 'select', 'choices' => isset( $def['choices'] ) ? $def['choices'] : array(), 'default_value' => $default,
                                  'allow_null' => 0, 'ui' => 0 );
+                } else if ( $type === 'menu' ) {
+                    $choices = array( '' => '— Use the menu location (Appearance → Menus), or the default links —' );
+                    if ( function_exists( 'wp_get_nav_menus' ) ) foreach ( wp_get_nav_menus() as $menu ) $choices[ (string) $menu->term_id ] = $menu->name;
+                    $f += array( 'type' => 'select', 'choices' => $choices, 'default_value' => '', 'allow_null' => 0, 'ui' => 0,
+                                 'instructions' => 'Pick any menu you made in Appearance → Menus.' );
+                } else if ( $type === 'sections' ) {
+                    $f += array( 'type' => 'repeater', 'layout' => 'block', 'button_label' => 'Add section', 'collapsed' => $f['key'] . '__title',
+                                 'instructions' => 'Each section gets a number and a spot in the “On this page” list. Drag to reorder.',
+                                 'sub_fields' => array(
+                                     array( 'key' => $f['key'] . '__title', 'name' => 'title', 'label' => 'Title', 'type' => 'text' ),
+                                     array( 'key' => $f['key'] . '__body', 'name' => 'body', 'label' => 'Text', 'type' => 'wysiwyg', 'tabs' => 'all', 'toolbar' => 'basic', 'media_upload' => 0 ),
+                                 ) );
                 } else if ( $type === 'svg' ) {
                     $f += array( 'type' => 'file', 'return_format' => 'id', 'mime_types' => 'svg', 'library' => 'all',
                                  'instructions' => 'Upload an SVG. It is recolored with the color field below. Empty = the official logo file.' );
@@ -509,7 +543,7 @@ add_action( 'acf/init', function () {
                 $note = array( 'toggle' => '1 = on, 0 = off', 'select' => 'one of: ' . ( isset( $def['choices'] ) ? implode( ', ', array_keys( (array) $def['choices'] ) ) : '' ),
                                'number' => 'a number' . ( isset( $def['unit'] ) && $def['unit'] !== '' ? ' (' . $def['unit'] . ')' : '' ),
                                'image' => 'an image URL', 'image-tag' => 'an image URL', 'svg' => 'not settable here (upload above)',
-                               'gallery' => 'not settable here (use the gallery above)', 'url' => 'a link or page path', 'color' => 'a color like #602232' );
+                               'gallery' => 'not settable here (use the gallery above)', 'sections' => 'not settable here (use the list above)', 'menu' => 'a menu ID', 'url' => 'a link or page path', 'color' => 'a color like #602232' );
                 $how = isset( $note[ $type ] ) ? $note[ $type ] : 'text';
                 $rows .= '<tr><td><code>' . esc_html( $key ) . '</code></td><td>' . esc_html( isset( $def['label'] ) ? $def['label'] : $key ) . '</td><td>' . esc_html( $how ) . '</td></tr>';
             }
@@ -529,6 +563,29 @@ add_action( 'acf/init', function () {
         ) );
     }
 } );
+
+/* Section lists (type "sections", e.g. the policy pages) start out filled with the written text, so
+   it can be edited in place rather than only showing as a fallback. Runs once per list; emptying a
+   list afterwards is respected (it is never refilled). */
+add_action( 'acf/init', function () {
+    if ( ! is_admin() || ! function_exists( 'update_field' ) ) return;
+    foreach ( oe_sections() as $sec ) {
+        $sid = str_replace( '-', '_', $sec['id'] );
+        foreach ( oe_section_slots( $sec['id'] ) as $key => $def ) {
+            if ( ( isset( $def['type'] ) ? $def['type'] : '' ) !== 'sections' || empty( $def['default'] ) || ! is_array( $def['default'] ) ) continue;
+            $flag = 'oe_seeded_' . $sid . '_' . $key;
+            if ( get_option( $flag ) ) continue;
+            $fkey = 'field_oe_' . $sid . '_' . $key;
+            $have = get_field( $fkey, 'option' );
+            if ( empty( $have ) ) {
+                $rows = array();
+                foreach ( $def['default'] as $r ) $rows[] = array( $fkey . '__title' => isset( $r['title'] ) ? $r['title'] : '', $fkey . '__body' => isset( $r['body'] ) ? $r['body'] : '' );
+                update_field( $fkey, $rows, 'option' );
+            }
+            update_option( $flag, 1, false );
+        }
+    }
+}, 30 );
 
 /* ── WP admin → Section Content → Design System ───────────────────────────────
    Brand colors, button styles + hover effect, header menu colors. Saved values
