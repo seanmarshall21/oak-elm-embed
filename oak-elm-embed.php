@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.8
+ * Version: 1.7.9
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.8' );
+define( 'OE_EMBED_VERSION', '1.7.9' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -764,6 +764,7 @@ function oe_brand_fields() {
         'booking'    => array( 'Book your event link', '', 'url' ),
         'tour'       => array( 'Schedule a tour link', '', 'url' ),
         'contact'    => array( 'Contact page link', '', 'url' ),
+        'inquiry'    => array( 'Inquiry form link (HoneyBook)', 'https://oakelm414149.hbportal.co/public/6a4d37cd376eb7cfaf9c30b1/1-Inquiry_form', 'url' ),
         'privacy'    => array( 'Privacy Policy link', '/privacy-policy/', 'url' ),
         'cookies'    => array( 'Cookie Policy link', '/cookie-policy/', 'url' ),
     );
@@ -799,6 +800,7 @@ function oe_brand_social_active( $key ) {
 function oe_brand_link( $key, $label = '' ) {
     $all = oe_brand_fields();
     if ( in_array( $key, oe_brand_socials(), true ) && ! oe_brand_social_active( $key ) ) return '';   // hidden everywhere
+    if ( in_array( $key, oe_brand_mail_keys(), true ) && oe_brand_opt( $key . '_type' ) === 'form' ) return oe_brand_link( 'inquiry' );   // opens the inquiry pop-up
     if ( in_array( $key, oe_brand_mail_keys(), true ) && oe_brand_opt( $key . '_type' ) === 'email' ) {
         $to = ( oe_brand_opt( $key . '_email_source' ) === 'custom' ) ? oe_brand_opt( $key . '_email' ) : oe_brand( 'email' );
         if ( ! is_email( $to ) ) return '#';
@@ -895,7 +897,16 @@ add_action( 'acf/init', function () {
             'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'On', 'ui_off_text' => 'Off', 'default_value' => 1, 'wrapper' => array( 'width' => '25' ) );
         $F[] = $field( $key, 75 );
     }
-    // Book your event / Schedule a tour / Contact — page or email
+    // Inquiry form (HoneyBook) — opens in a pop-up on the site (Sean, 2026-10-02)
+    $F[] = $group( 'inquiry', 'Inquiry form (HoneyBook)', false );
+    $F[] = $field( 'inquiry', '66.67', array( 'label' => 'Inquiry form link',
+        'instructions' => 'The HoneyBook form’s public link. Any link to it opens the form in a pop-up (or a new tab — see the right). '
+                        . 'Use it with <code>#brand-inquiry</code> in a link or menu, the button shortcode <code>[oe_inquiry label="Inquire now"]</code>, '
+                        . 'or put the whole form on a page with <code>[oe_inquiry_form]</code>. Book your event / Schedule a tour / Contact below can also open it.' ) );
+    $F[] = array( 'key' => 'field_oe_brand_inquiry_mode', 'name' => 'oe_brand_inquiry_mode', 'label' => 'Opens', 'type' => 'select',
+        'choices' => array( 'popup' => 'In a pop-up on this site', 'tab' => 'On HoneyBook, in a new tab' ), 'default_value' => 'popup', 'allow_null' => 0, 'ui' => 0,
+        'wrapper' => array( 'width' => '33.33' ) );
+    // Book your event / Schedule a tour / Contact — page, email or the inquiry form
     $titles = array( 'booking' => 'Book your event', 'tour' => 'Schedule a tour', 'contact' => 'Contact' );
     foreach ( oe_brand_mail_keys() as $key ) {
         $F[] = $group( $key, $titles[ $key ], false );
@@ -903,9 +914,9 @@ add_action( 'acf/init', function () {
         $isEmail = array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ) ) );
         $sk = 'field_oe_brand_' . $key . '_email_source';
         $F[] = array( 'key' => $tk, 'name' => 'oe_brand_' . $key . '_type', 'label' => 'Link goes to', 'type' => 'select',
-            'choices' => array( 'page' => 'A page or link', 'email' => 'An email' ), 'default_value' => 'page', 'allow_null' => 0, 'ui' => 0,
+            'choices' => array( 'page' => 'A page or link', 'email' => 'An email', 'form' => 'The inquiry form' ), 'default_value' => 'page', 'allow_null' => 0, 'ui' => 0,
             'instructions' => 'Use it anywhere with <code>#brand-' . $key . '</code>.', 'wrapper' => array( 'width' => '33.33' ) );
-        $F[] = $field( $key, '66.67', array( 'label' => 'Page or URL', 'conditional_logic' => array( array( array( 'field' => $tk, 'operator' => '!=', 'value' => 'email' ) ) ) ) );
+        $F[] = $field( $key, '66.67', array( 'label' => 'Page or URL', 'conditional_logic' => array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'page' ) ) ) ) );
         $F[] = array( 'key' => $sk, 'name' => 'oe_brand_' . $key . '_email_source', 'label' => 'Which email', 'type' => 'select',
             'choices' => array( 'brand' => 'Use the brand email (Business)', 'custom' => 'Use a different email' ), 'default_value' => 'brand', 'allow_null' => 0, 'ui' => 0,
             'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '33.33' ) );
@@ -1026,3 +1037,93 @@ add_action( 'wp_footer', function () {
 </script>
     <?php
 }, 99 );
+
+/* Inquiry form (HoneyBook) pop-up (Sean, 2026-10-02). Brand info → Inquiry form holds the link.
+   Any link to that address (#brand-inquiry, [oe_inquiry], a menu item, a Book-your-event set to
+   "The inquiry form") opens the form in a pop-up instead of leaving the site; the form loads only
+   when first opened. [oe_inquiry_form] puts the whole form on a page instead. */
+function oe_inquiry_url() { $u = oe_brand( 'inquiry' ); return ( $u !== '' && preg_match( '#^https?://#i', $u ) ) ? $u : ''; }
+add_shortcode( 'oe_inquiry', function ( $atts ) {
+    $a = shortcode_atts( array( 'label' => 'Inquire now', 'class' => 'oe-btn oe-btn--dark' ), $atts, 'oe_inquiry' );
+    $u = oe_inquiry_url();
+    if ( $u === '' ) return '';
+    return '<a class="' . esc_attr( $a['class'] ) . '" href="' . esc_url( $u ) . '" data-oe-inquiry>' . esc_html( $a['label'] ) . '</a>';
+} );
+add_shortcode( 'oe_inquiry_form', function ( $atts ) {
+    $a = shortcode_atts( array( 'height' => '1400' ), $atts, 'oe_inquiry_form' );
+    $u = oe_inquiry_url();
+    if ( $u === '' ) return '';
+    return '<iframe class="oe-inquiry-embed" src="' . esc_url( $u ) . '" title="Inquiry form" loading="lazy" '
+         . 'style="display:block;width:100%;height:' . absint( $a['height'] ) . 'px;border:0;background:transparent"></iframe>';
+} );
+add_action( 'wp_footer', function () {
+    $u = oe_inquiry_url();
+    if ( $u === '' || oe_brand_opt( 'inquiry_mode' ) === 'tab' ) return;
+    ?>
+<dialog class="oe-inq" id="oe-inq" aria-label="Inquiry form">
+  <button class="oe-inq__close" type="button" aria-label="Close"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+  <p class="oe-inq__loading">Loading the form…</p>
+  <iframe class="oe-inq__frame" title="Inquiry form" data-src="<?php echo esc_url( $u ); ?>"></iframe>
+</dialog>
+<style id="oe-inq-css">
+.oe-inq { width: min(960px, calc(100vw - 32px)); max-width: none; height: min(1100px, calc(100dvh - 32px)); max-height: none;
+  margin: auto; padding: 0; border: 0; background: #edece3; color: #2d2926; overflow: hidden; }
+.oe-inq[open] { display: block; }
+.oe-inq::backdrop { background: rgba(45, 41, 38, 0.8); }
+.oe-inq__frame { position: absolute; inset: 56px 0 0; width: 100%; height: calc(100% - 56px); border: 0; background: transparent; }
+.oe-inq__loading { position: absolute; left: 0; right: 0; top: 45%; margin: 0; text-align: center; font: 500 14px/1.4 Montserrat, sans-serif; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+.oe-inq__close { position: absolute; top: 8px; right: 8px; z-index: 1; width: 40px; height: 40px; display: grid; place-items: center;
+  padding: 0; border: 0; border-radius: 0; background: transparent; color: #2d2926; cursor: pointer; box-shadow: none; }
+.oe-inq__close:focus-visible { outline: 2px solid #2d2926; outline-offset: 2px; }
+</style>
+<script id="oe-inq-js">
+(function () {
+  var dlg = document.getElementById("oe-inq");
+  if (!dlg || typeof dlg.showModal !== "function") return;
+  var frame = dlg.querySelector(".oe-inq__frame"), url = frame.getAttribute("data-src"), html = document.documentElement;
+  var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches, anims = null;
+  function norm(h) { try { var x = new URL(h, location.href); return (x.host + x.pathname).replace(/\/+$/, "").toLowerCase(); } catch (e) { return ""; } }
+  var target = norm(url);
+  frame.addEventListener("load", function () { var l = dlg.querySelector(".oe-inq__loading"); if (l && frame.getAttribute("src")) l.hidden = true; });
+  function play(entering, after) {
+    if (anims) anims.forEach(function (a) { a.cancel(); });
+    anims = null;
+    if (reduce || typeof dlg.animate !== "function") { if (after) after(); return; }
+    var o = { duration: 450, easing: entering ? "cubic-bezier(0.22, 1, 0.36, 1)" : "cubic-bezier(0.55, 0, 0.75, 0.2)", fill: "both", direction: entering ? "normal" : "reverse" };
+    var list = anims = [dlg.animate([{ opacity: 0, transform: "translateY(40px)" }, { opacity: 1, transform: "none" }], o)];
+    try { list.push(dlg.animate([{ opacity: 0 }, { opacity: 1 }], Object.assign({ pseudoElement: "::backdrop" }, o))); } catch (e) {}
+    var done = function () { if (anims !== list) return; list.forEach(function (a) { a.cancel(); }); anims = null; if (after) after(); };
+    list[0].onfinish = done; setTimeout(done, 520);
+  }
+  function open() {
+    if (!frame.getAttribute("src")) frame.setAttribute("src", url);      // load the form the first time only
+    if (!dlg.open) dlg.showModal();
+    html.classList.add("oe-tm-lock");
+    play(true);
+  }
+  function shut() {
+    if (!dlg.open) return;
+    play(false, function () { dlg.close(); html.classList.remove("oe-tm-lock"); });
+  }
+  document.addEventListener("click", function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (!a || !(a.hasAttribute("data-oe-inquiry") || norm(a.getAttribute("href")) === target)) return;
+    e.preventDefault(); e.stopPropagation();
+    open();
+  }, true);
+  // Start loading the form as soon as someone points at / touches a link to it, so it's ready on click.
+  function warm(e) {
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (a && !frame.getAttribute("src") && (a.hasAttribute("data-oe-inquiry") || norm(a.getAttribute("href")) === target)) frame.setAttribute("src", url);
+  }
+  document.addEventListener("pointerover", warm, { passive: true });
+  document.addEventListener("touchstart", warm, { passive: true });
+  dlg.querySelector(".oe-inq__close").addEventListener("click", shut);
+  dlg.addEventListener("click", function (e) { if (e.target === dlg) shut(); });
+  dlg.addEventListener("cancel", function (e) { e.preventDefault(); shut(); });
+  if (location.hash === "#inquire") open();                              // a shareable link that opens it
+})();
+</script>
+    <?php
+}, 20 );
