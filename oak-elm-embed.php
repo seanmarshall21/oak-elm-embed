@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.0
+ * Version: 1.7.1
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.0' );
+define( 'OE_EMBED_VERSION', '1.7.1' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -789,3 +789,15 @@ add_action( 'acf/init', function () {
     acf_add_local_field_group( array( 'key' => 'group_oe_brand_info', 'title' => 'Brand info', 'fields' => $F, 'style' => 'default',
         'location' => array( array( array( 'param' => 'options_page', 'operator' => '==', 'value' => 'oe-brand-info' ) ) ) ) );
 }, 20 );
+
+/* Section Content menu order (Sean, 2026-10-01): Brand info first, Design System last. */
+add_action( 'admin_menu', function () {
+    global $submenu;
+    if ( empty( $submenu['oe-section-content'] ) ) return;
+    $order = array( 'oe-brand-info', 'oe-sc-site-wide', 'oe-sc-home', 'oe-sc-events', 'oe-sc-about', 'oe-sc-faq', 'oe-sc-legal', 'oe-sc-design-system' );
+    usort( $submenu['oe-section-content'], function ( $a, $b ) use ( $order ) {
+        $ia = array_search( $a[2], $order, true ); $ib = array_search( $b[2], $order, true );
+        $ia = ( $ia === false ) ? 99 : $ia; $ib = ( $ib === false ) ? 99 : $ib;
+        return $ia - $ib;
+    } );
+}, 999 );
