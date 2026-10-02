@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.4
+ * Version: 1.6.5
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.4' );
+define( 'OE_EMBED_VERSION', '1.6.5' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -313,6 +313,95 @@ add_action( 'after_setup_theme', function () {
         'oe_footer_3' => 'Oak + Elm — Footer column 3',
         'oe_legal'   => 'Oak + Elm — Footer legal',
     ) );
+} );
+
+/* ── Newsletter sign-ups (Sean, 2026-10-01) ──────────────────────────────────
+   The newsletter form posts to /wp-json/oe/v1/signup. Each sign-up is saved as a private
+   "Newsletter sign-ups" entry in wp-admin (email, consent time, page), with a CSV export, and
+   an email notice goes to the address set in Section Content → Site-wide → Newsletter (or the
+   site admin email). Free, no outside service. Spam: a hidden trap field + a short per-visitor
+   limit. Only the email and consent are stored (no IP address). */
+add_action( 'init', function () {
+    register_post_type( 'oe_signup', array(
+        'labels'       => array( 'name' => 'Newsletter sign-ups', 'singular_name' => 'Newsletter sign-up',
+                                 'menu_name' => 'Sign-ups', 'all_items' => 'Newsletter sign-ups',
+                                 'not_found' => 'No sign-ups yet.' ),
+        'public'       => false, 'show_ui' => true, 'show_in_menu' => true, 'show_in_rest' => false,
+        'menu_icon'    => 'dashicons-email-alt', 'menu_position' => 26, 'supports' => array( 'title' ),
+        'capabilities' => array( 'create_posts' => 'do_not_allow' ), 'map_meta_cap' => true,
+    ) );
+} );
+
+function oe_signup_setting( $key, $fallback = '' ) {
+    if ( ! function_exists( 'get_field' ) ) return $fallback;
+    $v = get_field( 'oe_newsletter_' . $key, 'option' );
+    return ( $v === null || $v === false || $v === '' ) ? $fallback : $v;
+}
+
+add_action( 'rest_api_init', function () {
+    register_rest_route( 'oe/v1', '/signup', array(
+        'methods'             => 'POST',
+        'permission_callback' => '__return_true',   // public form; guarded by the trap field + limit
+        'callback'            => function ( WP_REST_Request $req ) {
+            if ( trim( (string) $req->get_param( 'website' ) ) !== '' ) {         // trap field: bots fill it
+                return new WP_REST_Response( array( 'ok' => true ), 200 );          // look successful, save nothing
+            }
+            $email = sanitize_email( (string) $req->get_param( 'email' ) );
+            if ( ! is_email( $email ) ) return new WP_REST_Response( array( 'ok' => false, 'error' => 'email' ), 400 );
+            if ( ! $req->get_param( 'consent' ) ) return new WP_REST_Response( array( 'ok' => false, 'error' => 'consent' ), 400 );
+            $who = 'oe_signup_' . md5( ( isset( $_SERVER['REMOTE_ADDR'] ) ? $_SERVER['REMOTE_ADDR'] : '' ) . wp_salt() );
+            $n   = (int) get_transient( $who );
+            if ( $n >= 5 ) return new WP_REST_Response( array( 'ok' => false, 'error' => 'limit' ), 429 );
+            set_transient( $who, $n + 1, 10 * MINUTE_IN_SECONDS );
+            $page = esc_url_raw( (string) $req->get_param( 'page' ) );
+            $dupe = get_posts( array( 'post_type' => 'oe_signup', 'post_status' => 'private', 'title' => $email,
+                                      'fields' => 'ids', 'posts_per_page' => 1 ) );
+            if ( $dupe ) return new WP_REST_Response( array( 'ok' => true, 'already' => true ), 200 );
+            $id = wp_insert_post( array( 'post_type' => 'oe_signup', 'post_status' => 'private', 'post_title' => $email ) );
+            if ( ! $id || is_wp_error( $id ) ) return new WP_REST_Response( array( 'ok' => false, 'error' => 'save' ), 500 );
+            update_post_meta( $id, 'oe_consent_at', current_time( 'mysql' ) );
+            update_post_meta( $id, 'oe_page', $page );
+            // Toggle: never saved = on; a saved Off (false / 0 / "0") must win.
+            $notify = function_exists( 'get_field' ) ? get_field( 'oe_newsletter_notify', 'option' ) : null;
+            if ( $notify === null || $notify === '' || ! empty( $notify ) ) {
+                $to = oe_signup_setting( 'notify_email', get_option( 'admin_email' ) );
+                if ( is_email( $to ) ) wp_mail( $to, 'New newsletter sign-up: ' . $email,
+                    "Email: $email\nAgreed to the Privacy Policy: yes\nPage: $page\n\nAll sign-ups: " . admin_url( 'edit.php?post_type=oe_signup' ) );
+            }
+            return new WP_REST_Response( array( 'ok' => true ), 200 );
+        },
+    ) );
+} );
+
+// List screen: Email | Agreed | Page, plus an "Export CSV" button.
+add_filter( 'manage_oe_signup_posts_columns', function () {
+    return array( 'cb' => '<input type="checkbox">', 'title' => 'Email', 'oe_consent' => 'Agreed to Privacy Policy', 'oe_page' => 'Signed up on' );
+} );
+add_action( 'manage_oe_signup_posts_custom_column', function ( $col, $id ) {
+    if ( $col === 'oe_consent' ) echo esc_html( get_post_meta( $id, 'oe_consent_at', true ) );
+    if ( $col === 'oe_page' )    echo esc_html( wp_parse_url( (string) get_post_meta( $id, 'oe_page', true ), PHP_URL_PATH ) );
+}, 10, 2 );
+add_filter( 'post_row_actions', function ( $actions, $post ) {
+    if ( $post->post_type === 'oe_signup' ) unset( $actions['inline hide-if-no-js'], $actions['edit'], $actions['view'] );
+    return $actions;
+}, 10, 2 );
+add_action( 'manage_posts_extra_tablenav', function ( $which ) {
+    if ( $which !== 'top' || get_current_screen()->post_type !== 'oe_signup' || ! current_user_can( 'manage_options' ) ) return;
+    $url = wp_nonce_url( admin_url( 'admin-post.php?action=oe_signup_csv' ), 'oe_signup_csv' );
+    echo '<div class="alignleft actions"><a class="button" href="' . esc_url( $url ) . '">Export CSV</a></div>';
+} );
+add_action( 'admin_post_oe_signup_csv', function () {
+    if ( ! current_user_can( 'manage_options' ) || ! check_admin_referer( 'oe_signup_csv' ) ) wp_die( 'Not allowed.' );
+    nocache_headers();
+    header( 'Content-Type: text/csv; charset=utf-8' );
+    header( 'Content-Disposition: attachment; filename=oak-elm-newsletter-signups-' . gmdate( 'Y-m-d' ) . '.csv' );
+    $out = fopen( 'php://output', 'w' );
+    fputcsv( $out, array( 'Email', 'Agreed to Privacy Policy', 'Signed up on' ) );
+    foreach ( get_posts( array( 'post_type' => 'oe_signup', 'post_status' => 'private', 'posts_per_page' => -1, 'orderby' => 'date', 'order' => 'ASC' ) ) as $p ) {
+        fputcsv( $out, array( $p->post_title, get_post_meta( $p->ID, 'oe_consent_at', true ), get_post_meta( $p->ID, 'oe_page', true ) ) );
+    }
+    fclose( $out );
+    exit;
 } );
 
 /* ── WP admin → Section Content (needs ACF PRO) ───────────────────────────────
