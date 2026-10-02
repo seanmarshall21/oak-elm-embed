@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.3
+ * Version: 1.6.4
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.3' );
+define( 'OE_EMBED_VERSION', '1.6.4' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -308,7 +308,9 @@ add_action( 'after_setup_theme', function () {
         'oe_primary' => 'Oak + Elm — Primary',
         'oe_cta'     => 'Oak + Elm — Contact button',
         'oe_social'  => 'Oak + Elm — Social',
-        'oe_footer'  => 'Oak + Elm — Footer',
+        'oe_footer'  => 'Oak + Elm — Footer column 1',
+        'oe_footer_2' => 'Oak + Elm — Footer column 2',
+        'oe_footer_3' => 'Oak + Elm — Footer column 3',
         'oe_legal'   => 'Oak + Elm — Footer legal',
     ) );
 } );
