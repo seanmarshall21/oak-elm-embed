@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.6
+ * Version: 1.6.7
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.6' );
+define( 'OE_EMBED_VERSION', '1.6.7' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -449,7 +449,8 @@ add_action( 'acf/init', function () {
             $fields[] = array(
                 'key' => 'field_oe_' . str_replace( '-', '_', $sec['id'] ) . '__show', 'name' => 'oe_' . str_replace( '-', '_', $sec['id'] ) . '__show',
                 'label' => 'Show this section', 'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'Shown', 'ui_off_text' => 'Hidden', 'default_value' => 1,
-                'instructions' => 'Untick to take this section off the live page. Nothing is deleted — the wording below stays exactly as it is and comes straight back when you tick it again. Takes up to two minutes to show on the site.',
+                'instructions' => 'Shortcode for this section: <code>[oe_' . esc_html( $sec['id'] ) . ']</code> — paste it into the page (Oxygen: a Shortcode element) where the section should appear. '
+                                . 'Untick to take this section off the live page. Nothing is deleted — the wording below stays exactly as it is and comes straight back when you tick it again. Takes up to two minutes to show on the site.',
             );
             $opened = false; $has_acc = false;
             foreach ( $sec['slots'] as $key => $def ) {
@@ -501,6 +502,25 @@ add_action( 'acf/init', function () {
                 $fields[] = $f;
             }
             if ( $has_acc ) $fields[] = array( 'key' => 'field_oe_acc_end_' . $sec['id'], 'label' => '', 'name' => '', 'type' => 'accordion', 'endpoint' => 1 );
+            // Reference at the end of each tab: the shortcode and every option it accepts (Sean, 2026-10-01).
+            $rows = '';
+            foreach ( $sec['slots'] as $key => $def ) {
+                $type = isset( $def['type'] ) ? $def['type'] : 'text';
+                $note = array( 'toggle' => '1 = on, 0 = off', 'select' => 'one of: ' . ( isset( $def['choices'] ) ? implode( ', ', array_keys( (array) $def['choices'] ) ) : '' ),
+                               'number' => 'a number' . ( isset( $def['unit'] ) && $def['unit'] !== '' ? ' (' . $def['unit'] . ')' : '' ),
+                               'image' => 'an image URL', 'image-tag' => 'an image URL', 'svg' => 'not settable here (upload above)',
+                               'gallery' => 'not settable here (use the gallery above)', 'url' => 'a link or page path', 'color' => 'a color like #602232' );
+                $how = isset( $note[ $type ] ) ? $note[ $type ] : 'text';
+                $rows .= '<tr><td><code>' . esc_html( $key ) . '</code></td><td>' . esc_html( isset( $def['label'] ) ? $def['label'] : $key ) . '</td><td>' . esc_html( $how ) . '</td></tr>';
+            }
+            $fields[] = array(
+                'key' => 'field_oe_info_' . $sec['id'], 'label' => 'Shortcode & options', 'name' => '', 'type' => 'message', 'esc_html' => 0,
+                'message' => '<p>Shortcode: <code>[oe_' . esc_html( $sec['id'] ) . ']</code></p>'
+                           . '<p>Any field in this tab can also be set right in the shortcode — that wins over what is saved here, for that one placement. '
+                           . 'Example: <code>[oe_' . esc_html( $sec['id'] ) . ' ' . esc_html( (string) key( $sec['slots'] ) ) . '="…"]</code>. '
+                           . 'Extra option: <code>ttl="0"</code> = always fetch the newest copy of this section (default: refreshed every few minutes).</p>'
+                           . '<table class="widefat striped" style="max-width:900px"><thead><tr><th>Option</th><th>Field</th><th>Value</th></tr></thead><tbody>' . $rows . '</tbody></table>',
+            );
         }
         acf_add_local_field_group( array(
             'key' => 'group_oe_' . str_replace( '-', '_', sanitize_title( $group ) ),
