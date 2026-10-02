@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.5
+ * Version: 1.6.6
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.5' );
+define( 'OE_EMBED_VERSION', '1.6.6' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -257,8 +257,10 @@ function oe_fill_slots( $frag, $id, $atts, $ttl ) {
     // WordPress menus: swap <!--oe:menu loc-->defaults<!--/oe:menu--> for the assigned menu.
     $frag = preg_replace_callback( '#<!--oe:menu\s+([a-z0-9_]+)-->([\s\S]*?)<!--/oe:menu-->#', function ( $m ) {
         if ( ! function_exists( 'has_nav_menu' ) || ! has_nav_menu( $m[1] ) ) return $m[2];
+        // The main menu keeps one level of sub-pages (dropdowns: "More" panel / bar dropdowns /
+        // phone accordions, handled by oe.js). Every other menu stays flat.
         $items = wp_nav_menu( array( 'theme_location' => $m[1], 'container' => false, 'items_wrap' => '%3$s',
-                                     'depth' => 1, 'echo' => false, 'fallback_cb' => false ) );
+                                     'depth' => ( $m[1] === 'oe_primary' ? 2 : 1 ), 'echo' => false, 'fallback_cb' => false ) );
         return is_string( $items ) && $items !== '' ? $items : $m[2];
     }, $frag );
     $frag = str_replace( '{{base}}', esc_url( rtrim( OE_BASE, '/' ) ), $frag );
