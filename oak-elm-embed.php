@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.9
+ * Version: 1.8.0
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.9' );
+define( 'OE_EMBED_VERSION', '1.8.0' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -906,6 +906,31 @@ add_action( 'acf/init', function () {
     $F[] = array( 'key' => 'field_oe_brand_inquiry_mode', 'name' => 'oe_brand_inquiry_mode', 'label' => 'Opens', 'type' => 'select',
         'choices' => array( 'popup' => 'In a pop-up on this site', 'tab' => 'On HoneyBook, in a new tab' ), 'default_value' => 'popup', 'allow_null' => 0, 'ui' => 0,
         'wrapper' => array( 'width' => '33.33' ) );
+    // Pop-up look + motion (Sean, 2026-10-02)
+    $ix = function ( $name, $label, $type, $width, $extra = array() ) {
+        return array_merge( array( 'key' => 'field_oe_brand_inquiry_' . $name, 'name' => 'oe_brand_inquiry_' . $name, 'label' => $label,
+            'type' => $type, 'wrapper' => array( 'width' => (string) $width ),
+            'conditional_logic' => array( array( array( 'field' => 'field_oe_brand_inquiry_mode', 'operator' => '!=', 'value' => 'tab' ) ) ) ), $extra );
+    };
+    $F[] = $ix( 'look_h', 'Pop-up look', 'message', 100, array( 'message' => '', 'wrapper' => array( 'width' => '100', 'class' => 'oe-subhead' ) ) );
+    $F[] = $ix( 'bg', 'Background', 'color_picker', 25, array( 'default_value' => '#f6f7f8', 'instructions' => 'Behind the form. #f6f7f8 matches the HoneyBook form.' ) );
+    $F[] = $ix( 'close_color', 'Close (✕) color', 'color_picker', 25, array( 'default_value' => '#2d2926' ) );
+    $F[] = $ix( 'backdrop', 'Page dimming', 'color_picker', 25, array( 'default_value' => 'rgba(45,41,38,0.8)', 'enable_opacity' => 1, 'return_format' => 'string',
+        'instructions' => 'The color laid over the page behind the pop-up. Use the opacity slider for how dark.' ) );
+    $F[] = $ix( 'backdrop_close', 'Click outside closes it', 'true_false', 25, array( 'ui' => 1, 'ui_on_text' => 'On', 'ui_off_text' => 'Off', 'default_value' => 1,
+        'instructions' => 'Off = only the ✕ (or Esc) closes it, so nobody loses a half-filled form by a stray click.' ) );
+    $F[] = $ix( 'size', 'Size', 'select', 25, array( 'choices' => array( 'box' => 'A box in the middle', 'full' => 'Full screen' ), 'default_value' => 'box', 'allow_null' => 0, 'ui' => 0 ) );
+    $F[] = $ix( 'width', 'Box — max width', 'number', 25, array( 'placeholder' => '960', 'append' => 'px', 'min' => 320, 'max' => 2400,
+        'instructions' => 'Leave blank for 960px. Always leaves a 16px margin on small screens.' ) );
+    $F[] = $ix( 'height', 'Box — max height', 'number', 25, array( 'placeholder' => '1100', 'append' => 'px', 'min' => 300, 'max' => 2400,
+        'instructions' => 'Leave blank for 1100px. Never taller than the screen.' ) );
+    $F[] = $ix( 'radius', 'Box — corner rounding', 'number', 25, array( 'placeholder' => '0', 'append' => 'px', 'min' => 0, 'max' => 60 ) );
+    $F[] = $ix( 'motion_h', 'Pop-up motion', 'message', 100, array( 'message' => '', 'wrapper' => array( 'width' => '100', 'class' => 'oe-subhead' ) ) );
+    $F[] = $ix( 'in', 'Opens with', 'select', 25, array( 'choices' => array( 'slide' => 'Slide up a little', 'rise' => 'Slide up from the bottom', 'zoom' => 'Zoom in', 'fade' => 'Fade in', 'none' => 'No animation' ), 'default_value' => 'slide', 'allow_null' => 0, 'ui' => 0 ) );
+    $F[] = $ix( 'out', 'Closes with', 'select', 25, array( 'choices' => array( 'slide' => 'Slide down a little', 'rise' => 'Slide down to the bottom', 'zoom' => 'Zoom out', 'fade' => 'Fade out', 'none' => 'No animation' ), 'default_value' => 'slide', 'allow_null' => 0, 'ui' => 0 ) );
+    $F[] = $ix( 'speed', 'Speed', 'number', 25, array( 'placeholder' => '450', 'append' => 'ms', 'min' => 0, 'max' => 2000,
+        'instructions' => 'Leave blank for 450 (just under half a second). 1000 = one second.' ) );
+    $F[] = $ix( 'ease', 'Feel', 'select', 25, array( 'choices' => array( 'soft' => 'Soft landing (fast, then settles)', 'even' => 'Even', 'spring' => 'Slight bounce' ), 'default_value' => 'soft', 'allow_null' => 0, 'ui' => 0 ) );
     // Book your event / Schedule a tour / Contact — page, email or the inquiry form
     $titles = array( 'booking' => 'Book your event', 'tour' => 'Schedule a tour', 'contact' => 'Contact' );
     foreach ( oe_brand_mail_keys() as $key ) {
@@ -1059,22 +1084,40 @@ add_shortcode( 'oe_inquiry_form', function ( $atts ) {
 add_action( 'wp_footer', function () {
     $u = oe_inquiry_url();
     if ( $u === '' || oe_brand_opt( 'inquiry_mode' ) === 'tab' ) return;
+    $o = function ( $k, $d ) { $v = oe_brand_opt( 'inquiry_' . $k ); return $v === '' ? $d : $v; };
+    $color = function ( $v, $d ) { return preg_match( '/^(#[0-9a-f]{3,8}|rgba?\([0-9.,\s%]+\))$/i', trim( $v ) ) ? trim( $v ) : $d; };
+    $num = function ( $v, $d, $min, $max ) { return is_numeric( $v ) ? max( $min, min( $max, (int) $v ) ) : $d; };
+    $choice = function ( $v, $ok, $d ) { return in_array( $v, $ok, true ) ? $v : $d; };
+    $vars = '--inq-bg:' . $color( $o( 'bg', '#f6f7f8' ), '#f6f7f8' )
+          . ';--inq-x:' . $color( $o( 'close_color', '#2d2926' ), '#2d2926' )
+          . ';--inq-dim:' . $color( $o( 'backdrop', 'rgba(45,41,38,0.8)' ), 'rgba(45,41,38,0.8)' )
+          . ';--inq-w:' . $num( $o( 'width', '' ), 960, 320, 2400 ) . 'px'
+          . ';--inq-h:' . $num( $o( 'height', '' ), 1100, 300, 2400 ) . 'px'
+          . ';--inq-r:' . $num( $o( 'radius', '' ), 0, 0, 60 ) . 'px';
+    $bc = function_exists( 'get_field' ) ? get_field( 'oe_brand_inquiry_backdrop_close', 'option' ) : null;   // never saved = on
+    $attrs = ' data-size="' . $choice( $o( 'size', 'box' ), array( 'box', 'full' ), 'box' ) . '"'
+           . ' data-in="' . $choice( $o( 'in', 'slide' ), array( 'slide', 'rise', 'zoom', 'fade', 'none' ), 'slide' ) . '"'
+           . ' data-out="' . $choice( $o( 'out', 'slide' ), array( 'slide', 'rise', 'zoom', 'fade', 'none' ), 'slide' ) . '"'
+           . ' data-speed="' . $num( $o( 'speed', '' ), 450, 0, 2000 ) . '"'
+           . ' data-ease="' . $choice( $o( 'ease', 'soft' ), array( 'soft', 'even', 'spring' ), 'soft' ) . '"'
+           . ' data-backdrop-close="' . ( ( $bc !== null && $bc !== '' && empty( $bc ) ) ? '0' : '1' ) . '"';
     ?>
-<dialog class="oe-inq" id="oe-inq" aria-label="Inquiry form">
+<dialog class="oe-inq" id="oe-inq" aria-label="Inquiry form" style="<?php echo esc_attr( $vars ); ?>"<?php echo $attrs; ?>>
   <button class="oe-inq__close" type="button" aria-label="Close"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
   <p class="oe-inq__loading">Loading the form…</p>
   <iframe class="oe-inq__frame" title="Inquiry form" data-src="<?php echo esc_url( $u ); ?>"></iframe>
 </dialog>
 <style id="oe-inq-css">
-.oe-inq { width: min(960px, calc(100vw - 32px)); max-width: none; height: min(1100px, calc(100dvh - 32px)); max-height: none;
-  margin: auto; padding: 0; border: 0; background: #edece3; color: #2d2926; overflow: hidden; }
+.oe-inq { width: min(var(--inq-w, 960px), calc(100vw - 32px)); max-width: none; height: min(var(--inq-h, 1100px), calc(100dvh - 32px)); max-height: none;
+  margin: auto; padding: 0; border: 0; border-radius: var(--inq-r, 0); background: var(--inq-bg, #f6f7f8); color: #2d2926; overflow: hidden; }
+.oe-inq[data-size="full"] { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; }
 .oe-inq[open] { display: block; }
-.oe-inq::backdrop { background: rgba(45, 41, 38, 0.8); }
+.oe-inq::backdrop { background: var(--inq-dim, rgba(45, 41, 38, 0.8)); }
 .oe-inq__frame { position: absolute; inset: 56px 0 0; width: 100%; height: calc(100% - 56px); border: 0; background: transparent; }
 .oe-inq__loading { position: absolute; left: 0; right: 0; top: 45%; margin: 0; text-align: center; font: 500 14px/1.4 Montserrat, sans-serif; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
 .oe-inq__close { position: absolute; top: 8px; right: 8px; z-index: 1; width: 40px; height: 40px; display: grid; place-items: center;
-  padding: 0; border: 0; border-radius: 0; background: transparent; color: #2d2926; cursor: pointer; box-shadow: none; }
-.oe-inq__close:focus-visible { outline: 2px solid #2d2926; outline-offset: 2px; }
+  padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--inq-x, #2d2926); cursor: pointer; box-shadow: none; }
+.oe-inq__close:focus-visible { outline: 2px solid var(--inq-x, #2d2926); outline-offset: 2px; }
 </style>
 <script id="oe-inq-js">
 (function () {
@@ -1089,11 +1132,27 @@ add_action( 'wp_footer', function () {
     if (anims) anims.forEach(function (a) { a.cancel(); });
     anims = null;
     if (reduce || typeof dlg.animate !== "function") { if (after) after(); return; }
-    var o = { duration: 450, easing: entering ? "cubic-bezier(0.22, 1, 0.36, 1)" : "cubic-bezier(0.55, 0, 0.75, 0.2)", fill: "both", direction: entering ? "normal" : "reverse" };
-    var list = anims = [dlg.animate([{ opacity: 0, transform: "translateY(40px)" }, { opacity: 1, transform: "none" }], o)];
+    var kind = dlg.getAttribute(entering ? "data-in" : "data-out") || "slide", ms = +dlg.getAttribute("data-speed");
+    if (isNaN(ms)) ms = 450;
+    var FR = {
+      slide: [{ opacity: 0, transform: "translateY(40px)" }, { opacity: 1, transform: "none" }],
+      rise:  [{ transform: "translateY(100vh)" }, { transform: "none" }],
+      zoom:  [{ opacity: 0, transform: "scale(0.88)" }, { opacity: 1, transform: "none" }],
+      fade:  [{ opacity: 0 }, { opacity: 1 }]
+    };
+    if (!FR[kind] || !ms) { if (after) after(); return; }
+    var EASE = {
+      soft:   ["cubic-bezier(0.22, 1, 0.36, 1)", "cubic-bezier(0.55, 0, 0.75, 0.2)"],
+      even:   ["ease-in-out", "ease-in-out"],
+      spring: ["cubic-bezier(0.34, 1.56, 0.64, 1)", "cubic-bezier(0.36, 0, 0.66, -0.56)"]
+    }[dlg.getAttribute("data-ease")] || ["ease", "ease"];
+    var o = { duration: ms, easing: EASE[entering ? 0 : 1], fill: "both", direction: entering ? "normal" : "reverse" };
+    // reversed playback runs the easing backwards too, so closing uses the mirror of the opening curve
+    if (!entering) o.easing = EASE[0];
+    var list = anims = [dlg.animate(FR[kind], o)];
     try { list.push(dlg.animate([{ opacity: 0 }, { opacity: 1 }], Object.assign({ pseudoElement: "::backdrop" }, o))); } catch (e) {}
     var done = function () { if (anims !== list) return; list.forEach(function (a) { a.cancel(); }); anims = null; if (after) after(); };
-    list[0].onfinish = done; setTimeout(done, 520);
+    list[0].onfinish = done; setTimeout(done, ms + 80);
   }
   function open() {
     if (!frame.getAttribute("src")) frame.setAttribute("src", url);      // load the form the first time only
@@ -1120,7 +1179,7 @@ add_action( 'wp_footer', function () {
   document.addEventListener("pointerover", warm, { passive: true });
   document.addEventListener("touchstart", warm, { passive: true });
   dlg.querySelector(".oe-inq__close").addEventListener("click", shut);
-  dlg.addEventListener("click", function (e) { if (e.target === dlg) shut(); });
+  dlg.addEventListener("click", function (e) { if (e.target === dlg && dlg.getAttribute("data-backdrop-close") !== "0") shut(); });
   dlg.addEventListener("cancel", function (e) { e.preventDefault(); shut(); });
   if (location.hash === "#inquire") open();                              // a shareable link that opens it
 })();
