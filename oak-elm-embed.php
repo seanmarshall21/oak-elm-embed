@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.5
+ * Version: 1.7.6
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.5' );
+define( 'OE_EMBED_VERSION', '1.7.6' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -913,3 +913,59 @@ add_action( 'admin_menu', function () {
         return $ia - $ib;
     } );
 }, 999 );
+
+/* Field directions as hover tooltips on every Section Content page (Sean, 2026-10-02).
+   The gray help line under each label becomes an (i) next to the label; hover or tab to it to read. */
+add_action( 'admin_footer', function () {
+    $page = isset( $_GET['page'] ) ? sanitize_key( $_GET['page'] ) : '';
+    if ( $page !== 'oe-section-content' && $page !== 'oe-brand-info' && strpos( $page, 'oe-sc-' ) !== 0 ) return;
+    ?>
+<style id="oe-admin-tips">
+.oe-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; }
+.oe-tip__btn { width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%; background: #c3c4c7; color: #fff;
+  font: 600 11px/16px Georgia, serif; font-style: italic; text-align: center; cursor: help; }
+.oe-tip:hover .oe-tip__btn, .oe-tip__btn:focus { background: #2271b1; outline: none; }
+.oe-tip__box { position: absolute; left: -10px; top: 100%; z-index: 100000; width: max-content; max-width: 320px;
+  margin-top: 0; padding: 14px 12px 10px; border-top: 6px solid transparent; background-clip: padding-box;
+  font-size: 12px; line-height: 1.5; font-weight: 400; color: #fff; white-space: normal;
+  visibility: hidden; opacity: 0; transition: opacity .12s, visibility 0s .12s; }
+.oe-tip__box::before { content: ""; position: absolute; inset: 0; background: #1d2327; border-radius: 4px; z-index: -1; }
+.oe-tip__box code { background: rgba(255,255,255,.14); color: #fff; padding: 1px 4px; user-select: all; }
+.oe-tip__box a { color: #72aee6; }
+.oe-tip--right .oe-tip__box { left: auto; right: -10px; }
+.oe-tip:hover .oe-tip__box, .oe-tip:focus-within .oe-tip__box { visibility: visible; opacity: 1; transition-delay: 0s; }
+.acf-field .acf-label p.description.oe-tipped, .acf-field .acf-input > p.description.oe-tipped { display: none; }
+</style>
+<script id="oe-admin-tips-js">
+(function () {
+  function tipify(root) {
+    (root || document).querySelectorAll('.acf-field:not(.acf-field-message):not(.acf-field-accordion)').forEach(function (f) {
+      if (f.dataset.oeTip) return;
+      var label = f.querySelector(':scope > .acf-label');
+      var desc = (label && label.querySelector(':scope > p.description')) || f.querySelector(':scope > .acf-input > p.description');
+      if (!label || !desc || !desc.textContent.trim()) return;
+      f.dataset.oeTip = '1';
+      var tip = document.createElement('span');
+      tip.className = 'oe-tip';
+      tip.innerHTML = '<button type="button" class="oe-tip__btn" aria-label="Help">i</button><span class="oe-tip__box" role="tooltip"></span>';
+      tip.lastChild.innerHTML = desc.innerHTML;
+      var target = label.querySelector('label') || label;
+      target.appendChild(tip);
+      desc.classList.add('oe-tipped');
+      tip.addEventListener('mouseenter', place); tip.addEventListener('focusin', place);
+    });
+  }
+  // Keep the box on screen: flip it to open leftward when it would run off the right edge.
+  function place() {
+    this.classList.remove('oe-tip--right');
+    var r = this.querySelector('.oe-tip__box').getBoundingClientRect();
+    if (r.right > window.innerWidth - 16) this.classList.add('oe-tip--right');
+  }
+  // The tip sits inside the field's <label>: stop clicks on it from focusing/toggling the field (links still work).
+  document.addEventListener('click', function (e) { if (e.target.closest('.oe-tip') && !e.target.closest('a')) e.preventDefault(); }, true);
+  tipify();
+  if (window.acf && acf.addAction) { acf.addAction('append', function ($el) { tipify($el[0]); }); acf.addAction('show_field', function (f) { tipify(f.$el[0].parentNode); }); }
+})();
+</script>
+    <?php
+} );
