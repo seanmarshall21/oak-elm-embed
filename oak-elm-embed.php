@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.6.9
+ * Version: 1.7.0
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.6.9' );
+define( 'OE_EMBED_VERSION', '1.7.0' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -264,6 +264,7 @@ function oe_fill_slots( $frag, $id, $atts, $ttl ) {
         }
         $out[ $key ] = oe_slot_value( $type, $val, $def );
     }
+    $out = array_map( 'oe_brand_resolve', $out );   // #brand-… / [brand …] → Brand info (empty stays empty)
     // <!--oe:if slot-->…<!--/oe:if--> is dropped when that slot ends up empty (e.g. unused FAQ rows).
     $frag = preg_replace_callback( '#<!--oe:if\s+([a-z0-9_]+)-->([\s\S]*?)<!--/oe:if-->#', function ( $m ) use ( $out ) {
         return ( isset( $out[ $m[1] ] ) && trim( $out[ $m[1] ] ) !== '' ) ? $m[2] : '';
@@ -286,6 +287,7 @@ function oe_fill_slots( $frag, $id, $atts, $ttl ) {
         return is_string( $items ) && $items !== '' ? $items : $m[2];
     }, $frag );
     $frag = str_replace( '{{base}}', esc_url( rtrim( OE_BASE, '/' ) ), $frag );
+    $frag = oe_brand_resolve( $frag );              // default links + WordPress menus
     return preg_replace( '/\{\{[a-z0-9_-]+\}\}/i', '', $frag ); // never show raw tokens
 }
 
@@ -696,4 +698,94 @@ add_action( 'acf/init', function () {
         'key' => 'group_oe_design_system', 'title' => 'Design System', 'fields' => $F, 'style' => 'default',
         'location' => array( array( array( 'param' => 'options_page', 'operator' => '==', 'value' => 'oe-sc-design-system' ) ) ),
     ) );
+}, 20 );
+
+/* ── Brand info (Sean, 2026-10-01) ────────────────────────────────────────────────────────
+   One place (Section Content → Brand info) for things repeated around the site. Use them anywhere:
+     in a link / menu Custom Link URL:  #brand-email  #brand-phone  #brand-instagram  #brand-tour …
+       (#brand-email becomes mailto:…, #brand-phone becomes tel:…, the rest their saved link)
+     in text, ACF fields, Oxygen:       [brand email]  [brand phone]  [brand address]  [brand name] …
+   Works inside every Oak + Elm section, in WordPress menus everywhere, and in page content.
+   Until a field is filled, the old "Brand" page (Company Name, first Contact Email) is the fallback. */
+function oe_brand_fields() {
+    return array( // key => [label, default, kind]  kind: text | email | phone | url
+        'name'       => array( 'Business name', 'Oak + Elm', 'text' ),
+        'legal_name' => array( 'Legal business name (policies)', '', 'text' ),
+        'email'      => array( 'Email', '', 'email' ),
+        'phone'      => array( 'Phone', '', 'phone' ),
+        'address'    => array( 'Address / location', 'West Michigan', 'text' ),
+        'instagram'  => array( 'Instagram link', '', 'url' ),
+        'facebook'   => array( 'Facebook link', '', 'url' ),
+        'pinterest'  => array( 'Pinterest link', '', 'url' ),
+        'tiktok'     => array( 'TikTok link', '', 'url' ),
+        'youtube'    => array( 'YouTube link', '', 'url' ),
+        'booking'    => array( 'Book your event link', '', 'url' ),
+        'tour'       => array( 'Schedule a tour link', '', 'url' ),
+        'contact'    => array( 'Contact page link', '', 'url' ),
+        'privacy'    => array( 'Privacy Policy link', '/privacy-policy/', 'url' ),
+        'cookies'    => array( 'Cookie Policy link', '/cookie-policy/', 'url' ),
+    );
+}
+function oe_brand( $key ) {
+    static $cache = array();
+    if ( array_key_exists( $key, $cache ) ) return $cache[ $key ];
+    $all = oe_brand_fields();
+    if ( ! isset( $all[ $key ] ) ) return $cache[ $key ] = '';
+    $v = function_exists( 'get_field' ) ? get_field( 'oe_brand_' . $key, 'option' ) : '';
+    $v = is_string( $v ) ? trim( $v ) : '';
+    if ( $v === '' && function_exists( 'get_field' ) ) {           // the older "Brand" page
+        if ( $key === 'name' ) { $o = get_field( 'company_name', 'option' ); if ( is_string( $o ) ) $v = trim( $o ); }
+        if ( $key === 'email' ) { $rows = get_field( 'contact_emails', 'option' ); if ( is_array( $rows ) && ! empty( $rows[0]['email_address'] ) ) $v = trim( $rows[0]['email_address'] ); }
+    }
+    if ( $v === '' && $key === 'legal_name' ) $v = oe_brand( 'name' );   // no legal name yet: the business name
+    if ( $v === '' ) $v = $all[ $key ][1];
+    return $cache[ $key ] = $v;
+}
+function oe_brand_link( $key ) {
+    $all = oe_brand_fields(); $v = oe_brand( $key );
+    if ( $v === '' || ! isset( $all[ $key ] ) ) return '#';
+    if ( $all[ $key ][2] === 'email' ) return 'mailto:' . $v;
+    if ( $all[ $key ][2] === 'phone' ) return 'tel:' . preg_replace( '/[^0-9+]/', '', $v );
+    if ( $all[ $key ][2] === 'url' ) return $v;
+    return '#';
+}
+/* Swap #brand-key (links) and [brand key] (text) in a chunk of HTML. */
+function oe_brand_resolve( $html ) {
+    if ( ! is_string( $html ) || ( strpos( $html, '#brand-' ) === false && strpos( $html, '[brand' ) === false ) ) return $html;
+    $html = preg_replace_callback( '/#brand-([a-z_]+)/', function ( $m ) { return esc_url( oe_brand_link( $m[1] ) ); }, $html );
+    return preg_replace_callback( '/\[brand\s+(?:field=["\']?)?([a-z_]+)["\']?\s*\]/', function ( $m ) { return esc_html( oe_brand( $m[1] ) ); }, $html );
+}
+add_shortcode( 'brand', function ( $atts ) {
+    $key = is_array( $atts ) ? ( isset( $atts['field'] ) ? $atts['field'] : ( isset( $atts[0] ) ? $atts[0] : '' ) ) : '';
+    return esc_html( oe_brand( sanitize_key( $key ) ) );
+} );
+add_filter( 'nav_menu_link_attributes', function ( $a ) {
+    if ( isset( $a['href'] ) && strpos( $a['href'], '#brand-' ) !== false && preg_match( '/#brand-([a-z_]+)/', $a['href'], $m ) ) {
+        $a['href'] = oe_brand_link( $m[1] );
+        if ( in_array( $m[1], array( 'instagram', 'facebook', 'pinterest', 'tiktok', 'youtube' ), true ) ) { $a['target'] = '_blank'; $a['rel'] = 'noopener'; }
+    }
+    return $a;
+} );
+add_filter( 'the_content', 'oe_brand_resolve', 20 );
+add_filter( 'widget_text', 'oe_brand_resolve', 20 );
+
+add_action( 'acf/init', function () {
+    if ( ! is_admin() || ! function_exists( 'acf_add_options_sub_page' ) || ! function_exists( 'acf_add_local_field_group' ) ) return;
+    acf_add_options_sub_page( array(
+        'page_title' => 'Section Content — Brand info', 'menu_title' => 'Brand info',
+        'parent_slug' => 'oe-section-content', 'menu_slug' => 'oe-brand-info', 'capability' => 'edit_pages',
+        'update_button' => 'Save brand info', 'updated_message' => 'Brand info saved.',
+    ) );
+    $F = array( array( 'key' => 'field_oe_brand_msg', 'label' => '', 'name' => '', 'type' => 'message', 'esc_html' => 0,
+        'message' => '<strong>Brand info</strong> — fill these in once and use them anywhere. '
+                   . 'In a link or a menu <em>Custom Link</em> URL type <code>#brand-</code> plus the key (e.g. <code>#brand-instagram</code>, <code>#brand-email</code> → mailto, <code>#brand-phone</code> → tap to call). '
+                   . 'In text, ACF fields or Oxygen use <code>[brand email]</code>, <code>[brand phone]</code>, <code>[brand address]</code>, <code>[brand name]</code>… The key is shown under each field.' ) );
+    foreach ( oe_brand_fields() as $key => $d ) {
+        $F[] = array( 'key' => 'field_oe_brand_' . $key, 'name' => 'oe_brand_' . $key, 'label' => $d[0],
+            'type' => ( $d[2] === 'email' ? 'email' : ( $key === 'address' ? 'textarea' : 'text' ) ), 'rows' => 2, 'placeholder' => $d[1],
+            'instructions' => 'Link: <code>#brand-' . $key . '</code> · Text: <code>[brand ' . $key . ']</code>' . ( $d[1] !== '' ? ' · Blank = ' . esc_html( $d[1] ) : '' ),
+            'wrapper' => array( 'width' => '50' ) );
+    }
+    acf_add_local_field_group( array( 'key' => 'group_oe_brand_info', 'title' => 'Brand info', 'fields' => $F, 'style' => 'default',
+        'location' => array( array( array( 'param' => 'options_page', 'operator' => '==', 'value' => 'oe-brand-info' ) ) ) ) );
 }, 20 );
