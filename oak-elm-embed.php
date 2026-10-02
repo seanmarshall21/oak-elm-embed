@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.7
+ * Version: 1.7.8
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.7' );
+define( 'OE_EMBED_VERSION', '1.7.8' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -247,6 +247,26 @@ function oe_slot_value( $type, $val, $def = array() ) {
 add_action( 'wp_head', function () {
     echo '<script>(function(d){var h=d.documentElement;if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;h.classList.add("oe-anim");setTimeout(function(){h.classList.add("oe-anim-done")},4000)})(document)</script>';
 }, 1 );
+
+/* Page loader between pages (Sean, 2026-10-02): the splash page's tree loader — a faint tree that
+   fills bottom to top. Only when needed: oe.js sets a flag when a link to another page here is
+   clicked; the next page shows the loader only if that page is still not ready after 0.25s, and
+   oe.js fades it out the moment the page is ready. On the page being left it appears only if the
+   next page takes more than 0.6s to arrive. Never shown for reduced motion; gone by 4s no matter what. */
+add_action( 'wp_head', function () {
+    $tree = esc_url( OE_BASE . '/assets/logo-tree.svg' );
+    echo '<style id="oe-page-loader">'
+       . 'html.oe-pl-on::before,html.oe-pl-on::after{content:"";position:fixed;z-index:2147483000;pointer-events:none;opacity:0}'
+       . 'html.oe-pl-on::before{inset:0;background:linear-gradient(rgba(237,236,227,.9),rgba(237,236,227,.9)) center/120px 81px no-repeat,url(' . $tree . ') center/120px 81px no-repeat,#edece3;animation:oe-pl-in .3s ease .25s forwards}'
+       . 'html.oe-pl-on::after{left:50%;top:50%;width:120px;height:81px;margin:-40.5px 0 0 -60px;background:url(' . $tree . ') center/contain no-repeat;clip-path:inset(100% 0 0 0);animation:oe-pl-in .3s ease .25s forwards,oe-pl-fill 1.7s linear infinite}'
+       . 'html.oe-pl-leave::before,html.oe-pl-leave::after{animation-delay:.6s,0s}'
+       . 'html.oe-pl-out::before,html.oe-pl-out::after{animation:oe-pl-out .4s ease forwards}'
+       . 'html.oe-anim-done:not(.oe-pl-leave)::before,html.oe-anim-done:not(.oe-pl-leave)::after{display:none}'
+       . '@keyframes oe-pl-in{to{opacity:1}}@keyframes oe-pl-out{from{opacity:1}to{opacity:0}}'
+       . '@keyframes oe-pl-fill{0%{clip-path:inset(100% 0 0 0)}88.24%,100%{clip-path:inset(0 0 0 0)}}'
+       . '</style>';
+    echo '<script>(function(h){try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;var t=+sessionStorage.getItem("oe-pl");sessionStorage.removeItem("oe-pl");if(t&&Date.now()-t<15000)h.classList.add("oe-pl-on")}catch(e){}})(document.documentElement)</script>';
+}, 2 );
 
 /* Fill {{slots}}: attr > ACF option > default, formatted by declared type. */
 function oe_fill_slots( $frag, $id, $atts, $ttl ) {
@@ -527,7 +547,8 @@ add_action( 'acf/init', function () {
                 } else if ( $type === 'color' ) {
                     $f += array( 'type' => 'color_picker', 'default_value' => $default, 'return_format' => 'string' );
                 } else if ( $type === 'toggle' ) {
-                    $f += array( 'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'Shown', 'ui_off_text' => 'Hidden',
+                    $motion = (bool) preg_match( '/^(parallax|float)/', $key );   // motion switches read On/Off
+                    $f += array( 'type' => 'true_false', 'ui' => 1, 'ui_on_text' => $motion ? 'On' : 'Shown', 'ui_off_text' => $motion ? 'Off' : 'Hidden',
                                  'default_value' => ( $default === '1' ? 1 : 0 ) );
                 } else if ( $type === 'gallery' ) {
                     $f += array( 'type' => 'gallery', 'return_format' => 'array', 'preview_size' => 'thumbnail', 'library' => 'all',
@@ -546,10 +567,15 @@ add_action( 'acf/init', function () {
                                                  . 'Leave blank to use the text shown in gray.' );
                 }
                 if ( isset( $def['width'] ) ) $f['wrapper'] = array( 'width' => (string) $def['width'] );
+                if ( ! empty( $def['help'] ) ) $f['instructions'] = trim( $def['help'] . ' ' . ( isset( $f['instructions'] ) ? $f['instructions'] : '' ) );
                 if ( ! empty( $def['heading'] ) ) {  // a heading starts a collapsible group (first one per tab opens)
                     $fields[] = array( 'key' => $f['key'] . '__h', 'label' => $def['heading'], 'name' => '', 'type' => 'accordion',
                                        'open' => $opened ? 0 : 1, 'multi_expand' => 1, 'endpoint' => 0 );
                     $opened = true; $has_acc = true;
+                }
+                if ( ! empty( $def['subhead'] ) ) {  // a small title inside a group ("Main photo", "Small photo")
+                    $fields[] = array( 'key' => $f['key'] . '__sh', 'label' => $def['subhead'], 'name' => '', 'type' => 'message',
+                                       'message' => '', 'wrapper' => array( 'width' => '100', 'class' => 'oe-subhead' ) );
                 }
                 $fields[] = $f;
             }
@@ -938,6 +964,9 @@ add_action( 'admin_footer', function () {
 .oe-tip--right .oe-tip__box { left: auto; right: -10px; }
 .oe-tip:hover .oe-tip__box, .oe-tip:focus-within .oe-tip__box { visibility: visible; opacity: 1; transition-delay: 0s; }
 .acf-field .acf-label p.description.oe-tipped, .acf-field .acf-input > p.description.oe-tipped { display: none; }
+.acf-field.oe-subhead { padding-bottom: 0 !important; min-height: 0 !important; }
+.acf-field.oe-subhead .acf-label label { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #1d2327; }
+.acf-field.oe-subhead .acf-input { display: none; }
 </style>
 <script id="oe-admin-tips-js">
 (function () {
