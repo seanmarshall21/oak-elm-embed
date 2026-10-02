@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.1
+ * Version: 1.7.3
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.1' );
+define( 'OE_EMBED_VERSION', '1.7.3' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -260,6 +260,19 @@ function oe_fill_slots( $frag, $id, $atts, $ttl ) {
             $v = get_field( 'oe_' . str_replace( '-', '_', $id ) . '_' . $key, 'option' );
             if ( $type === 'toggle' ) {                 // a saved Off must win over the default On
                 if ( $v !== null && $v !== '' ) $val = $v;
+            } else if ( $type === 'sections' ) {
+                // On public pages the admin field definitions aren't loaded, so ACF hands back only the
+                // ROW COUNT for a list ("13"). Read each saved row straight from the options table then.
+                if ( ! is_array( $v ) && is_numeric( $v ) && (int) $v > 0 ) {
+                    $base = 'options_oe_' . str_replace( '-', '_', $id ) . '_' . $key;
+                    $rows = array();
+                    for ( $i = 0; $i < (int) $v; $i++ ) {
+                        $rows[] = array( 'title' => (string) get_option( $base . '_' . $i . '_title', '' ),
+                                         'body'  => wpautop( (string) get_option( $base . '_' . $i . '_body', '' ) ) );
+                    }
+                    $v = $rows;
+                }
+                if ( is_array( $v ) && $v !== array() ) $val = $v;
             } else if ( $v !== null && $v !== false && $v !== '' && $v !== array() ) $val = $v;
         }
         $out[ $key ] = oe_slot_value( $type, $val, $def );
@@ -793,9 +806,15 @@ add_action( 'acf/init', function () {
 /* Section Content menu order (Sean, 2026-10-01): Brand info first, Design System last. */
 add_action( 'admin_menu', function () {
     global $submenu;
-    if ( empty( $submenu['oe-section-content'] ) ) return;
     $order = array( 'oe-brand-info', 'oe-sc-site-wide', 'oe-sc-home', 'oe-sc-events', 'oe-sc-about', 'oe-sc-faq', 'oe-sc-legal', 'oe-sc-design-system' );
-    usort( $submenu['oe-section-content'], function ( $a, $b ) use ( $order ) {
+    // ACF's "redirect" files the sub-pages under the FIRST sub-page's slug, not 'oe-section-content',
+    // so find the submenu that holds our pages.
+    $parent = null;
+    foreach ( (array) $submenu as $key => $items ) {
+        foreach ( (array) $items as $it ) { if ( isset( $it[2] ) && $it[2] === 'oe-brand-info' ) { $parent = $key; break 2; } }
+    }
+    if ( $parent === null ) return;
+    usort( $submenu[ $parent ], function ( $a, $b ) use ( $order ) {
         $ia = array_search( $a[2], $order, true ); $ib = array_search( $b[2], $order, true );
         $ia = ( $ia === false ) ? 99 : $ia; $ib = ( $ib === false ) ? 99 : $ib;
         return $ia - $ib;
