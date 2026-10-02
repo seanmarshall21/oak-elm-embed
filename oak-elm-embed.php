@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.7.3
+ * Version: 1.7.4
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.7.3' );
+define( 'OE_EMBED_VERSION', '1.7.4' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -754,8 +754,23 @@ function oe_brand( $key ) {
     if ( $v === '' ) $v = $all[ $key ][1];
     return $cache[ $key ] = $v;
 }
-function oe_brand_link( $key ) {
-    $all = oe_brand_fields(); $v = oe_brand( $key );
+/* Book your event / Schedule a tour / Contact can each be a page OR an email (Sean, 2026-10-01). */
+function oe_brand_mail_keys() { return array( 'booking', 'tour', 'contact' ); }
+function oe_brand_opt( $name ) {
+    $v = function_exists( 'get_field' ) ? get_field( 'oe_brand_' . $name, 'option' ) : '';
+    return is_string( $v ) ? trim( $v ) : '';
+}
+function oe_brand_link( $key, $label = '' ) {
+    $all = oe_brand_fields();
+    if ( in_array( $key, oe_brand_mail_keys(), true ) && oe_brand_opt( $key . '_type' ) === 'email' ) {
+        $to = ( oe_brand_opt( $key . '_email_source' ) === 'custom' ) ? oe_brand_opt( $key . '_email' ) : oe_brand( 'email' );
+        if ( ! is_email( $to ) ) return '#';
+        $subject = oe_brand_opt( $key . '_subject' );
+        if ( $subject === '' ) $subject = trim( wp_strip_all_tags( (string) $label ) );          // the link's own label
+        if ( $subject === '' ) $subject = preg_replace( '/ link$/', '', $all[ $key ][0] );        // or the field's name
+        return 'mailto:' . $to . '?subject=' . rawurlencode( $subject );
+    }
+    $v = oe_brand( $key );
     if ( $v === '' || ! isset( $all[ $key ] ) ) return '#';
     if ( $all[ $key ][2] === 'email' ) return 'mailto:' . $v;
     if ( $all[ $key ][2] === 'phone' ) return 'tel:' . preg_replace( '/[^0-9+]/', '', $v );
@@ -765,6 +780,9 @@ function oe_brand_link( $key ) {
 /* Swap #brand-key (links) and [brand key] (text) in a chunk of HTML. */
 function oe_brand_resolve( $html ) {
     if ( ! is_string( $html ) || ( strpos( $html, '#brand-' ) === false && strpos( $html, '[brand' ) === false ) ) return $html;
+    $html = preg_replace_callback( '#<a\b([^>]*?)href=(["\'])\#brand-([a-z_]+)\2([^>]*)>([\s\S]*?)</a>#i', function ( $m ) {
+        return '<a' . $m[1] . 'href=' . $m[2] . esc_url( oe_brand_link( $m[3], $m[5] ) ) . $m[2] . $m[4] . '>' . $m[5] . '</a>';
+    }, $html );
     $html = preg_replace_callback( '/#brand-([a-z_]+)/', function ( $m ) { return esc_url( oe_brand_link( $m[1] ) ); }, $html );
     return preg_replace_callback( '/\[brand\s+(?:field=["\']?)?([a-z_]+)["\']?\s*\]/', function ( $m ) { return esc_html( oe_brand( $m[1] ) ); }, $html );
 }
@@ -772,13 +790,13 @@ add_shortcode( 'brand', function ( $atts ) {
     $key = is_array( $atts ) ? ( isset( $atts['field'] ) ? $atts['field'] : ( isset( $atts[0] ) ? $atts[0] : '' ) ) : '';
     return esc_html( oe_brand( sanitize_key( $key ) ) );
 } );
-add_filter( 'nav_menu_link_attributes', function ( $a ) {
+add_filter( 'nav_menu_link_attributes', function ( $a, $item = null ) {
     if ( isset( $a['href'] ) && strpos( $a['href'], '#brand-' ) !== false && preg_match( '/#brand-([a-z_]+)/', $a['href'], $m ) ) {
-        $a['href'] = oe_brand_link( $m[1] );
+        $a['href'] = oe_brand_link( $m[1], ( is_object( $item ) && isset( $item->title ) ) ? $item->title : '' );
         if ( in_array( $m[1], array( 'instagram', 'facebook', 'pinterest', 'tiktok', 'youtube' ), true ) ) { $a['target'] = '_blank'; $a['rel'] = 'noopener'; }
     }
     return $a;
-} );
+}, 10, 2 );
 add_filter( 'the_content', 'oe_brand_resolve', 20 );
 add_filter( 'widget_text', 'oe_brand_resolve', 20 );
 
@@ -794,7 +812,27 @@ add_action( 'acf/init', function () {
                    . 'In a link or a menu <em>Custom Link</em> URL type <code>#brand-</code> plus the key (e.g. <code>#brand-instagram</code>, <code>#brand-email</code> → mailto, <code>#brand-phone</code> → tap to call). '
                    . 'In text, ACF fields or Oxygen use <code>[brand email]</code>, <code>[brand phone]</code>, <code>[brand address]</code>, <code>[brand name]</code>… The key is shown under each field.' ) );
     foreach ( oe_brand_fields() as $key => $d ) {
-        $F[] = array( 'key' => 'field_oe_brand_' . $key, 'name' => 'oe_brand_' . $key, 'label' => $d[0],
+        $mail = in_array( $key, oe_brand_mail_keys(), true );
+        if ( $mail ) {
+            $tk = 'field_oe_brand_' . $key . '_type';
+            $F[] = array( 'key' => $tk, 'name' => 'oe_brand_' . $key . '_type', 'label' => preg_replace( '/ link$/', '', $d[0] ) . ' — link goes to', 'type' => 'select',
+                'choices' => array( 'page' => 'A page or link', 'email' => 'An email' ), 'default_value' => 'page', 'allow_null' => 0, 'ui' => 0,
+                'instructions' => 'Use it anywhere with <code>#brand-' . $key . '</code>.', 'wrapper' => array( 'width' => '50' ) );
+            $isEmail = array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ) ) );
+            $sk = 'field_oe_brand_' . $key . '_email_source';
+            $F[] = array( 'key' => $sk, 'name' => 'oe_brand_' . $key . '_email_source', 'label' => 'Which email', 'type' => 'select',
+                'choices' => array( 'brand' => 'Use the brand email above', 'custom' => 'Use a different email' ), 'default_value' => 'brand', 'allow_null' => 0, 'ui' => 0,
+                'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '50' ) );
+            $F[] = array( 'key' => 'field_oe_brand_' . $key . '_email', 'name' => 'oe_brand_' . $key . '_email', 'label' => 'Email address', 'type' => 'email',
+                'conditional_logic' => array( array( array( 'field' => $tk, 'operator' => '==', 'value' => 'email' ), array( 'field' => $sk, 'operator' => '==', 'value' => 'custom' ) ) ),
+                'wrapper' => array( 'width' => '50' ) );
+            $F[] = array( 'key' => 'field_oe_brand_' . $key . '_subject', 'name' => 'oe_brand_' . $key . '_subject', 'label' => 'Email subject', 'type' => 'text',
+                'placeholder' => 'Blank = the link\'s own label (e.g. the button text)',
+                'instructions' => 'Leave blank to use the label of whatever link points here — a “' . esc_html( preg_replace( '/ link$/', '', $d[0] ) ) . '” button sends that as the subject.',
+                'conditional_logic' => $isEmail, 'wrapper' => array( 'width' => '50' ) );
+        }
+        $F[] = array( 'key' => 'field_oe_brand_' . $key, 'name' => 'oe_brand_' . $key, 'label' => $d[0] . ( $mail ? ' (page or URL)' : '' ),
+            'conditional_logic' => $mail ? array( array( array( 'field' => 'field_oe_brand_' . $key . '_type', 'operator' => '!=', 'value' => 'email' ) ) ) : 0,
             'type' => ( $d[2] === 'email' ? 'email' : ( $key === 'address' ? 'textarea' : 'text' ) ), 'rows' => 2, 'placeholder' => $d[1],
             'instructions' => 'Link: <code>#brand-' . $key . '</code> · Text: <code>[brand ' . $key . ']</code>' . ( $d[1] !== '' ? ' · Blank = ' . esc_html( $d[1] ) : '' ),
             'wrapper' => array( 'width' => '50' ) );
