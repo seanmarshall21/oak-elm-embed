@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.8.0
+ * Version: 1.8.1
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.8.0' );
+define( 'OE_EMBED_VERSION', '1.8.1' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -489,9 +489,10 @@ add_action( 'acf/init', function () {
         return $ia === $ib ? strcmp( $a, $b ) : $ia - $ib;
     } );
 
+    $menu = oe_admin_menu_settings();
     acf_add_options_page( array(
-        'page_title' => 'Section Content', 'menu_title' => 'Section Content', 'menu_slug' => 'oe-section-content',
-        'capability' => 'edit_pages', 'redirect' => true, 'icon_url' => 'dashicons-layout', 'position' => '2.1', // right under Dashboard
+        'page_title' => $menu['title'], 'menu_title' => $menu['title'], 'menu_slug' => 'oe-section-content',
+        'capability' => 'edit_pages', 'redirect' => true, 'icon_url' => $menu['icon'], 'position' => $menu['position'],
     ) );
     foreach ( $groups as $group => $sections ) {
         $slug = 'oe-sc-' . sanitize_title( $group );
@@ -631,6 +632,17 @@ add_action( 'acf/init', function () {
     }
 }, 30 );
 
+/* The admin-menu order list starts out filled with the current order, so it can just be dragged. Once. */
+add_action( 'acf/init', function () {
+    if ( ! is_admin() || ! function_exists( 'update_field' ) || get_option( 'oe_seeded_menu_order' ) ) return;
+    if ( (int) get_option( 'options_oe_brand_menu_order', 0 ) === 0 ) {
+        $rows = array();
+        foreach ( array_keys( oe_admin_menu_pages() ) as $slug ) $rows[] = array( 'field_oe_brand_menu_order_item' => $slug );
+        update_field( 'field_oe_brand_menu_order', $rows, 'option' );
+    }
+    update_option( 'oe_seeded_menu_order', 1, false );
+}, 30 );
+
 /* ── WP admin → Section Content → Design System ───────────────────────────────
    Brand colors, button styles + hover effect, header menu colors. Saved values
    become CSS variables printed in <head> (html:root beats the stylesheet's :root),
@@ -749,6 +761,48 @@ add_action( 'acf/init', function () {
      in text, ACF fields, Oxygen:       [brand email]  [brand phone]  [brand address]  [brand name] …
    Works inside every Oak + Elm section, in WordPress menus everywhere, and in page content.
    Until a field is filled, the old "Brand" page (Company Name, first Contact Email) is the fallback. */
+/* Admin menu settings (Sean, 2026-10-05): Brand info → Admin menu sets the title, icon and place of the
+   "Section Content" menu, and the order of the pages inside it. Read raw (options_…) because this runs
+   before/while ACF registers its fields. */
+function oe_admin_menu_icons() {
+    return array( 'dashicons-layout' => 'Layout (default)', 'dashicons-admin-home' => 'House', 'dashicons-building' => 'Building',
+        'dashicons-heart' => 'Heart', 'dashicons-star-filled' => 'Star', 'dashicons-admin-appearance' => 'Paintbrush',
+        'dashicons-edit-page' => 'Page with pencil', 'dashicons-welcome-widgets-menus' => 'Blocks', 'dashicons-format-gallery' => 'Gallery',
+        'dashicons-palmtree' => 'Tree', 'dashicons-store' => 'Storefront', 'dashicons-admin-site-alt3' => 'Globe' );
+}
+function oe_admin_menu_settings() {
+    $title = trim( (string) get_option( 'options_oe_brand_menu_title', '' ) );
+    $icon  = (string) get_option( 'options_oe_brand_menu_icon', '' );
+    $pos   = (string) get_option( 'options_oe_brand_menu_position', '' );
+    $positions = array( 'top' => '1', 'dashboard' => '2.1', 'low' => '81' );
+    return array(
+        'title'    => $title !== '' ? wp_strip_all_tags( $title ) : 'Section Content',
+        'icon'     => isset( oe_admin_menu_icons()[ $icon ] ) ? $icon : 'dashicons-layout',
+        'position' => isset( $positions[ $pos ] ) ? $positions[ $pos ] : '1',          // default: the very top, above Dashboard
+    );
+}
+/* The pages inside the menu, in the default order: slug => label. */
+function oe_admin_menu_pages() {
+    $pages = array( 'oe-brand-info' => 'Brand info' );
+    $groups = array();
+    foreach ( oe_sections() as $sec ) { $g = ! empty( $sec['group'] ) ? (string) $sec['group'] : 'Other'; $groups[ $g ] = true; }
+    foreach ( array( 'Site-wide', 'Home', 'Events', 'About', 'FAQ', 'Legal' ) as $g ) if ( isset( $groups[ $g ] ) ) { $pages[ 'oe-sc-' . sanitize_title( $g ) ] = $g; unset( $groups[ $g ] ); }
+    foreach ( array_keys( $groups ) as $g ) $pages[ 'oe-sc-' . sanitize_title( $g ) ] = $g;
+    $pages['oe-sc-design-system'] = 'Design System';
+    return $pages;
+}
+/* The chosen order (slugs), from the Brand info list; pages not in the list keep their default place after it. */
+function oe_admin_menu_order() {
+    $all = array_keys( oe_admin_menu_pages() );
+    $n = (int) get_option( 'options_oe_brand_menu_order', 0 );
+    $picked = array();
+    for ( $i = 0; $i < $n; $i++ ) {
+        $v = (string) get_option( 'options_oe_brand_menu_order_' . $i . '_item', '' );
+        if ( in_array( $v, $all, true ) && ! in_array( $v, $picked, true ) ) $picked[] = $v;
+    }
+    return array_merge( $picked, array_values( array_diff( $all, $picked ) ) );
+}
+
 function oe_brand_fields() {
     return array( // key => [label, default, kind]  kind: text | email | phone | url
         'name'       => array( 'Business name', 'Oak + Elm', 'text' ),
@@ -956,6 +1010,21 @@ add_action( 'acf/init', function () {
     // Policy pages
     $F[] = $group( 'policies', 'Policy pages', false );
     $F[] = $field( 'privacy', 50 ); $F[] = $field( 'cookies', 50 );
+    // Admin menu — title, icon, place, and the order of the pages inside it
+    $F[] = $group( 'admin_menu', 'Admin menu (this menu’s name, icon, place and order)', false );
+    $F[] = array( 'key' => 'field_oe_brand_menu_title', 'name' => 'oe_brand_menu_title', 'label' => 'Menu name', 'type' => 'text',
+        'placeholder' => 'Section Content', 'wrapper' => array( 'width' => '33.33' ),
+        'instructions' => 'The name of this menu in the left-hand admin menu. Blank = “Section Content”. Shows after you save and reload.' );
+    $F[] = array( 'key' => 'field_oe_brand_menu_icon', 'name' => 'oe_brand_menu_icon', 'label' => 'Menu icon', 'type' => 'select',
+        'choices' => oe_admin_menu_icons(), 'default_value' => 'dashicons-layout', 'allow_null' => 0, 'ui' => 0, 'wrapper' => array( 'width' => '33.33' ) );
+    $F[] = array( 'key' => 'field_oe_brand_menu_position', 'name' => 'oe_brand_menu_position', 'label' => 'Menu place', 'type' => 'select',
+        'choices' => array( 'top' => 'Very top (above Dashboard)', 'dashboard' => 'Just under Dashboard', 'low' => 'Lower down (after Settings)' ),
+        'default_value' => 'top', 'allow_null' => 0, 'ui' => 0, 'wrapper' => array( 'width' => '33.33' ) );
+    $F[] = array( 'key' => 'field_oe_brand_menu_order', 'name' => 'oe_brand_menu_order', 'label' => 'Order of the pages in this menu', 'type' => 'repeater',
+        'layout' => 'table', 'button_label' => 'Add a page', 'min' => 0,
+        'instructions' => 'Drag the rows (by the number on the left) to reorder. Any page left out of the list keeps its usual place after these.',
+        'sub_fields' => array( array( 'key' => 'field_oe_brand_menu_order_item', 'name' => 'item', 'label' => 'Page', 'type' => 'select',
+            'choices' => oe_admin_menu_pages(), 'allow_null' => 0, 'ui' => 0 ) ) );
     $F[] = array( 'key' => 'field_oe_brand_grp_end', 'label' => '', 'name' => '', 'type' => 'accordion', 'endpoint' => 1 );
     acf_add_local_field_group( array( 'key' => 'group_oe_brand_info', 'title' => 'Brand info', 'fields' => $F, 'style' => 'default',
         'location' => array( array( array( 'param' => 'options_page', 'operator' => '==', 'value' => 'oe-brand-info' ) ) ) ) );
@@ -964,7 +1033,7 @@ add_action( 'acf/init', function () {
 /* Section Content menu order (Sean, 2026-10-01): Brand info first, Design System last. */
 add_action( 'admin_menu', function () {
     global $submenu;
-    $order = array( 'oe-brand-info', 'oe-sc-site-wide', 'oe-sc-home', 'oe-sc-events', 'oe-sc-about', 'oe-sc-faq', 'oe-sc-legal', 'oe-sc-design-system' );
+    $order = oe_admin_menu_order();   // Brand info → Admin menu (default: Brand info, Site-wide, Home, Events, About, FAQ, Legal, Design System)
     // ACF's "redirect" files the sub-pages under the FIRST sub-page's slug, not 'oe-section-content',
     // so find the submenu that holds our pages.
     $parent = null;
