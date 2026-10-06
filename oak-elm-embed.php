@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.8.3
+ * Version: 1.8.4
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.8.3' );
+define( 'OE_EMBED_VERSION', '1.8.4' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -210,6 +210,19 @@ function oe_slot_value( $type, $val, $def = array() ) {
         $id = is_array( $val ) ? 0 : absint( $val );
         return $id ? (string) $id : '';
     }
+    if ( $type === 'faq' ) {         // a list of { question, answer } rows → FAQ items (numbers come from the order)
+        $out = '';
+        foreach ( (array) $val as $row ) {
+            if ( ! is_array( $row ) ) continue;
+            $q = isset( $row['question'] ) ? trim( (string) $row['question'] ) : '';
+            $a = isset( $row['answer'] ) ? (string) $row['answer'] : '';
+            if ( $q === '' ) continue;
+            $lines = array_filter( array_map( 'trim', preg_split( '/\r?\n/', $a ) ), 'strlen' );
+            $out .= '<li class="oe-faq__item"><p class="oe-faq__q">' . esc_html( $q ) . '</p><p class="oe-faq__a">'
+                  . implode( ' ', array_map( function ( $l ) { return '<span class="oe-line">' . esc_html( $l ) . '</span>'; }, $lines ) ) . '</p></li>';
+        }
+        return $out;
+    }
     if ( $type === 'sections' ) {    // a list of { title, body } rows → <h2>title</h2> + body (oe.js numbers them)
         $out = '';
         foreach ( (array) $val as $row ) {
@@ -255,23 +268,28 @@ add_action( 'wp_head', function () {
    next page takes more than 0.6s to arrive. Never shown for reduced motion; gone by 4s no matter what. */
 add_action( 'wp_head', function () {
     $tree = esc_url( OE_BASE . '/assets/logo-tree.svg' );
+    $pt = oe_pt_settings();
+    echo '<script>window.OE_PT=' . wp_json_encode( $pt ) . ';</script>';
+    if ( ! $pt['plOn'] ) return;
+    $in = $pt['plIn'] / 1000; $out = $pt['plOut'] / 1000; $fill = $pt['plFill'] / 1000;
     echo '<style id="oe-page-loader">'
-       . 'html.oe-pl-on::before,html.oe-pl-on::after{content:"";position:fixed;z-index:2147483000;pointer-events:none;opacity:0}'
-       . 'html.oe-pl-on::before{inset:0;background:linear-gradient(rgba(237,236,227,.9),rgba(237,236,227,.9)) center/120px 81px no-repeat,url(' . $tree . ') center/120px 81px no-repeat,#edece3;animation:oe-pl-in .18s ease forwards}'
+       // drawn UNDER the header (z 45 < header 50), so the menu stays on screen during a page change
+       . 'html.oe-pl-on::before,html.oe-pl-on::after{content:"";position:fixed;z-index:45;pointer-events:none;opacity:0}'
+       . 'html.oe-pl-on::before{inset:0;background:linear-gradient(rgba(237,236,227,.9),rgba(237,236,227,.9)) center/120px 81px no-repeat,url(' . $tree . ') center/120px 81px no-repeat,#edece3;animation:oe-pl-in ' . $in . 's ease forwards}'
        // the fill picks up where it was on the page being left (--oe-pl-t = minus the time since the click)
-       . 'html.oe-pl-on::after{left:50%;top:50%;width:120px;height:81px;margin:-40.5px 0 0 -60px;background:url(' . $tree . ') center/contain no-repeat;clip-path:inset(100% 0 0 0);animation:oe-pl-in .18s ease forwards,oe-pl-fill 1.7s linear var(--oe-pl-t,0s) infinite}'
+       . 'html.oe-pl-on::after{left:50%;top:50%;width:120px;height:81px;margin:-40.5px 0 0 -60px;background:url(' . $tree . ') center/contain no-repeat;clip-path:inset(100% 0 0 0);animation:oe-pl-in ' . $in . 's ease forwards,oe-pl-fill ' . $fill . 's linear var(--oe-pl-t,0s) infinite}'
        . 'html.oe-pl-arrive::before,html.oe-pl-arrive::after{opacity:1;animation-name:none,oe-pl-fill}'
        . 'html.oe-pl-arrive::before{animation:none}'
-       . 'html.oe-pl-out::before,html.oe-pl-out::after{animation:oe-pl-out .4s ease forwards}'
-       . 'html.oe-pl-out::after{animation:oe-pl-out .4s ease forwards;clip-path:inset(0 0 0 0)}'
+       . 'html.oe-pl-out::before{animation:oe-pl-out ' . $out . 's ease forwards}'
+       . 'html.oe-pl-out::after{animation:oe-pl-out ' . $out . 's ease forwards;clip-path:inset(0 0 0 0)}'
        . 'html.oe-anim-done.oe-pl-arrive:not(.oe-pl-keep)::before,html.oe-anim-done.oe-pl-arrive:not(.oe-pl-keep)::after{display:none}'
        . 'html.oe-pl-on:has(.oe-splash)::before,html.oe-pl-on:has(.oe-splash)::after{display:none}'   // the splash has its own loader
        . '@keyframes oe-pl-in{to{opacity:1}}@keyframes oe-pl-out{from{opacity:1}to{opacity:0}}'
        . '@keyframes oe-pl-fill{0%{clip-path:inset(100% 0 0 0)}88.24%,100%{clip-path:inset(0 0 0 0)}}'
        . '</style>';
     // Arriving from a link on this site: the loader is already up from the first paint, the fill continues from
-    // the click, and oe.js keeps it until the page is ready AND one full fill (1.7s from the click) has played.
-    echo '<script>(function(h){try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;var t=+sessionStorage.getItem("oe-pl");sessionStorage.removeItem("oe-pl");var e=Date.now()-t;if(t&&e<15000){h.classList.add("oe-pl-on","oe-pl-arrive");h.style.setProperty("--oe-pl-t",(-e/1000)+"s");window.__oePlUntil=t+1700}}catch(x){}})(document.documentElement)</script>';
+    // the click, and oe.js keeps it until the page is ready AND the "shows for at least" time has passed.
+    echo '<script>(function(h){try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;var t=+sessionStorage.getItem("oe-pl");sessionStorage.removeItem("oe-pl");var e=Date.now()-t;if(t&&e<15000){h.classList.add("oe-pl-on","oe-pl-arrive");h.style.setProperty("--oe-pl-t",(-e/1000)+"s");window.__oePlUntil=t+' . (int) $pt['plMin'] . '}}catch(x){}})(document.documentElement)</script>';
 }, 2 );
 
 /* Fill {{slots}}: attr > ACF option > default, formatted by declared type. */
@@ -286,17 +304,22 @@ function oe_fill_slots( $frag, $id, $atts, $ttl ) {
             $v = get_field( 'oe_' . str_replace( '-', '_', $id ) . '_' . $key, 'option' );
             if ( $type === 'toggle' ) {                 // a saved Off must win over the default On
                 if ( $v !== null && $v !== '' ) $val = $v;
-            } else if ( $type === 'sections' ) {
+            } else if ( $type === 'sections' || $type === 'faq' ) {
                 // On public pages the admin field definitions aren't loaded, so ACF hands back only the
                 // ROW COUNT for a list ("13"). Read each saved row straight from the options table then.
                 if ( ! is_array( $v ) && is_numeric( $v ) && (int) $v > 0 ) {
                     $base = 'options_oe_' . str_replace( '-', '_', $id ) . '_' . $key;
                     $rows = array();
                     for ( $i = 0; $i < (int) $v; $i++ ) {
-                        $rows[] = array( 'title' => (string) get_option( $base . '_' . $i . '_title', '' ),
-                                         'body'  => wpautop( (string) get_option( $base . '_' . $i . '_body', '' ) ) );
+                        $rows[] = $type === 'faq'
+                            ? array( 'question' => (string) get_option( $base . '_' . $i . '_question', '' ),
+                                     'answer'   => (string) get_option( $base . '_' . $i . '_answer', '' ) )
+                            : array( 'title' => (string) get_option( $base . '_' . $i . '_title', '' ),
+                                     'body'  => wpautop( (string) get_option( $base . '_' . $i . '_body', '' ) ) );
                     }
                     $v = $rows;
+                } else if ( $type === 'faq' && ( $v === '' || $v === null || $v === '0' || $v === 0 || $v === false ) ) {
+                    $v = array();               // an emptied list stays empty (no starting answers)
                 }
                 if ( is_array( $v ) && $v !== array() ) $val = $v;
             } else if ( $v !== null && $v !== false && $v !== '' && $v !== array() ) $val = $v;
@@ -541,6 +564,13 @@ add_action( 'acf/init', function () {
                     if ( function_exists( 'wp_get_nav_menus' ) ) foreach ( wp_get_nav_menus() as $menu ) $choices[ (string) $menu->term_id ] = $menu->name;
                     $f += array( 'type' => 'select', 'choices' => $choices, 'default_value' => '', 'allow_null' => 0, 'ui' => 0,
                                  'instructions' => 'Pick any menu you made in Appearance → Menus.' );
+                } else if ( $type === 'faq' ) {
+                    $f += array( 'type' => 'repeater', 'layout' => 'block', 'button_label' => 'Add a question', 'collapsed' => $f['key'] . '__question',
+                                 'instructions' => 'Add a question, type its answer (each line shows on its own line), and drag rows by their number to reorder.',
+                                 'sub_fields' => array(
+                                     array( 'key' => $f['key'] . '__question', 'name' => 'question', 'label' => 'Question', 'type' => 'text' ),
+                                     array( 'key' => $f['key'] . '__answer', 'name' => 'answer', 'label' => 'Answer', 'type' => 'textarea', 'rows' => 4, 'new_lines' => '' ),
+                                 ) );
                 } else if ( $type === 'sections' ) {
                     $f += array( 'type' => 'repeater', 'layout' => 'block', 'button_label' => 'Add section', 'collapsed' => $f['key'] . '__title',
                                  'instructions' => 'Each section gets a number and a spot in the “On this page” list. Drag to reorder.',
@@ -594,7 +624,7 @@ add_action( 'acf/init', function () {
                 $note = array( 'toggle' => '1 = on, 0 = off', 'select' => 'one of: ' . ( isset( $def['choices'] ) ? implode( ', ', array_keys( (array) $def['choices'] ) ) : '' ),
                                'number' => 'a number' . ( isset( $def['unit'] ) && $def['unit'] !== '' ? ' (' . $def['unit'] . ')' : '' ),
                                'image' => 'an image URL', 'image-tag' => 'an image URL', 'svg' => 'not settable here (upload above)',
-                               'gallery' => 'not settable here (use the gallery above)', 'sections' => 'not settable here (use the list above)', 'menu' => 'a menu ID', 'url' => 'a link or page path', 'color' => 'a color like #602232' );
+                               'gallery' => 'not settable here (use the gallery above)', 'sections' => 'not settable here (use the list above)', 'faq' => 'not settable here (use the list above)', 'menu' => 'a menu ID', 'url' => 'a link or page path', 'color' => 'a color like #602232' );
                 $how = isset( $note[ $type ] ) ? $note[ $type ] : 'text';
                 $rows .= '<tr><td><code>' . esc_html( $key ) . '</code></td><td>' . esc_html( isset( $def['label'] ) ? $def['label'] : $key ) . '</td><td>' . esc_html( $how ) . '</td></tr>';
             }
@@ -645,6 +675,22 @@ add_action( 'admin_head', function () {
     echo '<style id="oe-menu-icon">#adminmenu .toplevel_page_oe-section-content .wp-menu-image img, #adminmenu .wp-menu-image img[src="' . esc_attr( $m['icon'] ) . '"]'
        . '{width:20px;height:20px;object-fit:contain;padding:7px 0 0;opacity:1;box-sizing:content-box}</style>';
 } );
+
+/* FAQ (Sean, 2026-10-06): the ten fixed question/answer slots became one list. Once, copy whatever was SAVED
+   in the old slots into the list, in order; the old design text is not added. */
+add_action( 'acf/init', function () {
+    if ( ! is_admin() || ! function_exists( 'update_field' ) || get_option( 'oe_migrated_faq_list' ) ) return;
+    if ( (int) get_option( 'options_oe_faq_questions_questions', 0 ) === 0 ) {
+        $rows = array();
+        for ( $i = 1; $i <= 10; $i++ ) {
+            $q = trim( (string) get_option( 'options_oe_faq_questions_q' . $i . '_question', '' ) );
+            $a = (string) get_option( 'options_oe_faq_questions_q' . $i . '_answer', '' );
+            if ( $q !== '' ) $rows[] = array( 'field_oe_faq_questions_questions__question' => $q, 'field_oe_faq_questions_questions__answer' => $a );
+        }
+        if ( $rows ) update_field( 'field_oe_faq_questions_questions', $rows, 'option' );
+    }
+    update_option( 'oe_migrated_faq_list', 1, false );
+}, 31 );
 
 /* The admin-menu order list starts out filled with the current order, so it can just be dragged. Once. */
 add_action( 'acf/init', function () {
@@ -762,11 +808,52 @@ add_action( 'acf/init', function () {
         $F[] = array( 'key' => 'field_oe_ds_' . $k, 'name' => 'oe_ds_' . $k, 'label' => 'Contact button — ' . $d[0], 'type' => 'color_picker',
                       'instructions' => 'Default: ' . $d[1], 'wrapper' => array( 'width' => '25' ) );
     }
+    // Page transitions + loader (Sean, 2026-10-06)
+    $F[] = array( 'key' => 'field_oe_ds_tab_pt', 'label' => 'Page transitions', 'name' => '', 'type' => 'tab', 'placement' => 'top' );
+    $F[] = array( 'key' => 'field_oe_ds_pt_exit_acc', 'label' => 'Leaving a page (when someone clicks a link to another page here)', 'name' => '', 'type' => 'accordion', 'open' => 1, 'multi_expand' => 1 );
+    $F[] = array( 'key' => 'field_oe_ds_pt_exit_on', 'name' => 'oe_ds_pt_exit_on', 'label' => 'Exit transition', 'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'On', 'ui_off_text' => 'Off', 'default_value' => 1,
+                  'instructions' => 'Off = the next page opens right away (the loader, if on, still shows).', 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pt_exit_style', 'name' => 'oe_ds_pt_exit_style', 'label' => 'What it does', 'type' => 'select', 'default_value' => 'fade', 'allow_null' => 0, 'ui' => 0,
+                  'choices' => array( 'fade' => 'Fade out', 'down' => 'Fade out and drift down', 'up' => 'Fade out and drift up' ), 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pt_exit_ms', 'name' => 'oe_ds_pt_exit_ms', 'label' => 'How long', 'type' => 'number', 'min' => 0, 'max' => 4000, 'append' => 'ms', 'placeholder' => '1000',
+                  'instructions' => 'Leave blank for 1000 (one second).', 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pt_exit_ease', 'name' => 'oe_ds_pt_exit_ease', 'label' => 'Feel', 'type' => 'select', 'default_value' => 'smooth', 'allow_null' => 0, 'ui' => 0,
+                  'choices' => array( 'smooth' => 'Smooth (slow start, slow end)', 'gentle' => 'Gentle (even, soft ends)', 'out' => 'Quick start, slow end', 'in' => 'Slow start, quick end' ), 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pt_keep', 'name' => 'oe_ds_pt_keep', 'label' => 'What stays on screen', 'type' => 'select', 'default_value' => 'template', 'allow_null' => 0, 'ui' => 0,
+                  'choices' => array( 'template' => 'Header, newsletter and footer stay — only the page content fades', 'header' => 'Only the header stays — everything else fades' ),
+                  'instructions' => 'The header always stays; it is the same on every page.', 'wrapper' => array( 'width' => '100' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pt_pl_acc', 'label' => 'Loader (the tree that fills while the next page opens)', 'name' => '', 'type' => 'accordion', 'open' => 1, 'multi_expand' => 1 );
+    $F[] = array( 'key' => 'field_oe_ds_pl_on', 'name' => 'oe_ds_pl_on', 'label' => 'Loader', 'type' => 'true_false', 'ui' => 1, 'ui_on_text' => 'On', 'ui_off_text' => 'Off', 'default_value' => 1, 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pl_start', 'name' => 'oe_ds_pl_start', 'label' => 'Starts after', 'type' => 'number', 'min' => 0, 'max' => 4000, 'append' => 'ms', 'placeholder' => '300',
+                  'instructions' => 'Time from the click. Shorter than the exit time = it rises while the page is still fading. Blank = 300.', 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pl_in', 'name' => 'oe_ds_pl_in', 'label' => 'Fade in', 'type' => 'number', 'min' => 0, 'max' => 3000, 'append' => 'ms', 'placeholder' => '600',
+                  'instructions' => 'Blank = 600.', 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pl_out', 'name' => 'oe_ds_pl_out', 'label' => 'Fade out', 'type' => 'number', 'min' => 0, 'max' => 3000, 'append' => 'ms', 'placeholder' => '500',
+                  'instructions' => 'Blank = 500.', 'wrapper' => array( 'width' => '25' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pl_fill', 'name' => 'oe_ds_pl_fill', 'label' => 'Tree fill — one cycle', 'type' => 'number', 'min' => 400, 'max' => 6000, 'append' => 'ms', 'placeholder' => '1700',
+                  'instructions' => 'How long the tree takes to fill, bottom to top (it repeats while waiting). Blank = 1700.', 'wrapper' => array( 'width' => '50' ) );
+    $F[] = array( 'key' => 'field_oe_ds_pl_min', 'name' => 'oe_ds_pl_min', 'label' => 'Shows for at least', 'type' => 'number', 'min' => 0, 'max' => 8000, 'append' => 'ms', 'placeholder' => '2000',
+                  'instructions' => 'Counted from the click, so it is seen and the tree fills once. Blank = 2000.', 'wrapper' => array( 'width' => '50' ) );
     acf_add_local_field_group( array(
         'key' => 'group_oe_design_system', 'title' => 'Design System', 'fields' => $F, 'style' => 'default',
         'location' => array( array( array( 'param' => 'options_page', 'operator' => '==', 'value' => 'oe-sc-design-system' ) ) ),
     ) );
 }, 20 );
+
+/* Page transition + loader settings (Design System → Page transitions). Read raw: also used in wp_head. */
+function oe_pt_settings() {
+    $o = function ( $k ) { $v = get_option( 'options_oe_ds_' . $k, null ); return $v; };
+    $num = function ( $k, $d, $lo, $hi ) use ( $o ) { $v = $o( $k ); return is_numeric( $v ) && $v !== '' ? max( $lo, min( $hi, (int) $v ) ) : $d; };
+    $on  = function ( $k ) use ( $o ) { $v = $o( $k ); return ( $v === null || $v === '' ) ? true : (bool) $v; };   // never saved = on
+    $pick = function ( $k, $ok, $d ) use ( $o ) { $v = (string) $o( $k ); return in_array( $v, $ok, true ) ? $v : $d; };
+    return array(
+        'exitOn' => $on( 'pt_exit_on' ), 'exitStyle' => $pick( 'pt_exit_style', array( 'fade', 'down', 'up' ), 'fade' ),
+        'exitMs' => $num( 'pt_exit_ms', 1000, 0, 4000 ), 'exitEase' => $pick( 'pt_exit_ease', array( 'smooth', 'gentle', 'out', 'in' ), 'smooth' ),
+        'keep' => $pick( 'pt_keep', array( 'template', 'header' ), 'template' ),
+        'plOn' => $on( 'pl_on' ), 'plStart' => $num( 'pl_start', 300, 0, 4000 ), 'plIn' => $num( 'pl_in', 600, 0, 3000 ),
+        'plOut' => $num( 'pl_out', 500, 0, 3000 ), 'plFill' => $num( 'pl_fill', 1700, 400, 6000 ), 'plMin' => $num( 'pl_min', 2000, 0, 8000 ),
+    );
+}
 
 /* ── Brand info (Sean, 2026-10-01) ────────────────────────────────────────────────────────
    One place (Section Content → Brand info) for things repeated around the site. Use them anywhere:
