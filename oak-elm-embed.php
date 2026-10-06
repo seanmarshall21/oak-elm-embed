@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.8.2
+ * Version: 1.8.3
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.8.2' );
+define( 'OE_EMBED_VERSION', '1.8.3' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -257,15 +257,21 @@ add_action( 'wp_head', function () {
     $tree = esc_url( OE_BASE . '/assets/logo-tree.svg' );
     echo '<style id="oe-page-loader">'
        . 'html.oe-pl-on::before,html.oe-pl-on::after{content:"";position:fixed;z-index:2147483000;pointer-events:none;opacity:0}'
-       . 'html.oe-pl-on::before{inset:0;background:linear-gradient(rgba(237,236,227,.9),rgba(237,236,227,.9)) center/120px 81px no-repeat,url(' . $tree . ') center/120px 81px no-repeat,#edece3;animation:oe-pl-in .3s ease .25s forwards}'
-       . 'html.oe-pl-on::after{left:50%;top:50%;width:120px;height:81px;margin:-40.5px 0 0 -60px;background:url(' . $tree . ') center/contain no-repeat;clip-path:inset(100% 0 0 0);animation:oe-pl-in .3s ease .25s forwards,oe-pl-fill 1.7s linear infinite}'
-       . 'html.oe-pl-leave::before,html.oe-pl-leave::after{animation-delay:.6s,0s}'
+       . 'html.oe-pl-on::before{inset:0;background:linear-gradient(rgba(237,236,227,.9),rgba(237,236,227,.9)) center/120px 81px no-repeat,url(' . $tree . ') center/120px 81px no-repeat,#edece3;animation:oe-pl-in .18s ease forwards}'
+       // the fill picks up where it was on the page being left (--oe-pl-t = minus the time since the click)
+       . 'html.oe-pl-on::after{left:50%;top:50%;width:120px;height:81px;margin:-40.5px 0 0 -60px;background:url(' . $tree . ') center/contain no-repeat;clip-path:inset(100% 0 0 0);animation:oe-pl-in .18s ease forwards,oe-pl-fill 1.7s linear var(--oe-pl-t,0s) infinite}'
+       . 'html.oe-pl-arrive::before,html.oe-pl-arrive::after{opacity:1;animation-name:none,oe-pl-fill}'
+       . 'html.oe-pl-arrive::before{animation:none}'
        . 'html.oe-pl-out::before,html.oe-pl-out::after{animation:oe-pl-out .4s ease forwards}'
-       . 'html.oe-anim-done:not(.oe-pl-leave)::before,html.oe-anim-done:not(.oe-pl-leave)::after{display:none}'
+       . 'html.oe-pl-out::after{animation:oe-pl-out .4s ease forwards;clip-path:inset(0 0 0 0)}'
+       . 'html.oe-anim-done.oe-pl-arrive:not(.oe-pl-keep)::before,html.oe-anim-done.oe-pl-arrive:not(.oe-pl-keep)::after{display:none}'
+       . 'html.oe-pl-on:has(.oe-splash)::before,html.oe-pl-on:has(.oe-splash)::after{display:none}'   // the splash has its own loader
        . '@keyframes oe-pl-in{to{opacity:1}}@keyframes oe-pl-out{from{opacity:1}to{opacity:0}}'
        . '@keyframes oe-pl-fill{0%{clip-path:inset(100% 0 0 0)}88.24%,100%{clip-path:inset(0 0 0 0)}}'
        . '</style>';
-    echo '<script>(function(h){try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;var t=+sessionStorage.getItem("oe-pl");sessionStorage.removeItem("oe-pl");if(t&&Date.now()-t<15000)h.classList.add("oe-pl-on")}catch(e){}})(document.documentElement)</script>';
+    // Arriving from a link on this site: the loader is already up from the first paint, the fill continues from
+    // the click, and oe.js keeps it until the page is ready AND one full fill (1.7s from the click) has played.
+    echo '<script>(function(h){try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;var t=+sessionStorage.getItem("oe-pl");sessionStorage.removeItem("oe-pl");var e=Date.now()-t;if(t&&e<15000){h.classList.add("oe-pl-on","oe-pl-arrive");h.style.setProperty("--oe-pl-t",(-e/1000)+"s");window.__oePlUntil=t+1700}}catch(x){}})(document.documentElement)</script>';
 }, 2 );
 
 /* Fill {{slots}}: attr > ACF option > default, formatted by declared type. */
