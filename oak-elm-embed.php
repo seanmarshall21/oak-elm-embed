@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Oak + Elm Sections
  * Description: Oak + Elm site sections built as code (HTML/CSS/JS) on Netlify and rendered natively in WordPress through shortcodes — no iframes. Adding a section never requires editing this file. Pattern copied from Vivo Creative's VC-Clients Embed (BRG), renamed so the two never collide.
- * Version: 1.8.1
+ * Version: 1.8.2
  * Author: Vivo Creative
  * GitHub Plugin URI: seanmarshall21/oak-elm-embed
  * Primary Branch: main
@@ -47,7 +47,7 @@
  */
 if ( ! defined( 'ABSPATH' ) ) return;
 
-define( 'OE_EMBED_VERSION', '1.8.1' );
+define( 'OE_EMBED_VERSION', '1.8.2' );
 define( 'OE_BASE', 'https://oakandelm.netlify.app' ); // Netlify site; publish dir = site/
 if ( ! defined( 'OE_TTL' ) ) define( 'OE_TTL', 120 );
 
@@ -632,6 +632,14 @@ add_action( 'acf/init', function () {
     }
 }, 30 );
 
+/* An uploaded menu icon: WordPress shows it at its natural size, so fit it to the 20px icon box. */
+add_action( 'admin_head', function () {
+    $m = oe_admin_menu_settings();
+    if ( strpos( $m['icon'], 'dashicons-' ) === 0 ) return;
+    echo '<style id="oe-menu-icon">#adminmenu .toplevel_page_oe-section-content .wp-menu-image img, #adminmenu .wp-menu-image img[src="' . esc_attr( $m['icon'] ) . '"]'
+       . '{width:20px;height:20px;object-fit:contain;padding:7px 0 0;opacity:1;box-sizing:content-box}</style>';
+} );
+
 /* The admin-menu order list starts out filled with the current order, so it can just be dragged. Once. */
 add_action( 'acf/init', function () {
     if ( ! is_admin() || ! function_exists( 'update_field' ) || get_option( 'oe_seeded_menu_order' ) ) return;
@@ -775,9 +783,11 @@ function oe_admin_menu_settings() {
     $icon  = (string) get_option( 'options_oe_brand_menu_icon', '' );
     $pos   = (string) get_option( 'options_oe_brand_menu_position', '' );
     $positions = array( 'top' => '1', 'dashboard' => '2.1', 'low' => '81' );
+    $own = (int) get_option( 'options_oe_brand_menu_icon_own', 0 );                    // uploaded icon wins
+    $own_url = $own ? wp_get_attachment_url( $own ) : '';
     return array(
         'title'    => $title !== '' ? wp_strip_all_tags( $title ) : 'Section Content',
-        'icon'     => isset( oe_admin_menu_icons()[ $icon ] ) ? $icon : 'dashicons-layout',
+        'icon'     => $own_url ? $own_url : ( isset( oe_admin_menu_icons()[ $icon ] ) ? $icon : 'dashicons-layout' ),
         'position' => isset( $positions[ $pos ] ) ? $positions[ $pos ] : '1',          // default: the very top, above Dashboard
     );
 }
@@ -1015,11 +1025,15 @@ add_action( 'acf/init', function () {
     $F[] = array( 'key' => 'field_oe_brand_menu_title', 'name' => 'oe_brand_menu_title', 'label' => 'Menu name', 'type' => 'text',
         'placeholder' => 'Section Content', 'wrapper' => array( 'width' => '33.33' ),
         'instructions' => 'The name of this menu in the left-hand admin menu. Blank = “Section Content”. Shows after you save and reload.' );
-    $F[] = array( 'key' => 'field_oe_brand_menu_icon', 'name' => 'oe_brand_menu_icon', 'label' => 'Menu icon', 'type' => 'select',
-        'choices' => oe_admin_menu_icons(), 'default_value' => 'dashicons-layout', 'allow_null' => 0, 'ui' => 0, 'wrapper' => array( 'width' => '33.33' ) );
+    $F[] = array( 'key' => 'field_oe_brand_menu_icon', 'name' => 'oe_brand_menu_icon', 'label' => 'Menu icon — built-in', 'type' => 'select',
+        'choices' => oe_admin_menu_icons(), 'default_value' => 'dashicons-layout', 'allow_null' => 0, 'ui' => 0, 'wrapper' => array( 'width' => '33.33' ),
+        'instructions' => 'Used when no icon is uploaded on the right.' );
     $F[] = array( 'key' => 'field_oe_brand_menu_position', 'name' => 'oe_brand_menu_position', 'label' => 'Menu place', 'type' => 'select',
         'choices' => array( 'top' => 'Very top (above Dashboard)', 'dashboard' => 'Just under Dashboard', 'low' => 'Lower down (after Settings)' ),
         'default_value' => 'top', 'allow_null' => 0, 'ui' => 0, 'wrapper' => array( 'width' => '33.33' ) );
+    $F[] = array( 'key' => 'field_oe_brand_menu_icon_own', 'name' => 'oe_brand_menu_icon_own', 'label' => 'Menu icon — your own', 'type' => 'image',
+        'return_format' => 'id', 'preview_size' => 'thumbnail', 'library' => 'all', 'mime_types' => 'svg,png,jpg,jpeg,webp,gif', 'wrapper' => array( 'width' => '33.33' ),
+        'instructions' => 'Upload your own icon (an SVG or a square PNG works best). It replaces the built-in icon; remove it to go back. Shows at 20×20 in the menu.' );
     $F[] = array( 'key' => 'field_oe_brand_menu_order', 'name' => 'oe_brand_menu_order', 'label' => 'Order of the pages in this menu', 'type' => 'repeater',
         'layout' => 'table', 'button_label' => 'Add a page', 'min' => 0,
         'instructions' => 'Drag the rows (by the number on the left) to reorder. Any page left out of the list keeps its usual place after these.',
